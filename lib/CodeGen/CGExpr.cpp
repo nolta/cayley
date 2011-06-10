@@ -85,10 +85,14 @@ llvm::Value *CodeGenFunction::EvaluateExprAsBool(const Expr *E) {
   }
 
   QualType BoolTy = getContext().BoolTy;
-  if (!E->getType()->isAnyComplexType())
-    return EmitScalarConversion(EmitScalarExpr(E), E->getType(), BoolTy);
+  if (E->getType()->isAnyComplexType())
+    return EmitComplexToScalarConversion(EmitComplexExpr(E),
+                                         E->getType(), BoolTy);
+  if (E->getType()->isSliceType())
+    return EmitSliceToScalarConversion(EmitSliceExpr(E),
+                                       E->getType(), BoolTy);
 
-  return EmitComplexToScalarConversion(EmitComplexExpr(E), E->getType(),BoolTy);
+  return EmitScalarConversion(EmitScalarExpr(E), E->getType(), BoolTy);
 }
 
 /// EmitIgnoredExpr - Emit code to compute the specified expression,
@@ -111,6 +115,8 @@ RValue CodeGenFunction::EmitAnyExpr(const Expr *E, AggValueSlot AggSlot,
     return RValue::get(EmitScalarExpr(E, IgnoreResult));
   else if (E->getType()->isAnyComplexType())
     return RValue::getComplex(EmitComplexExpr(E, IgnoreResult, IgnoreResult));
+  else if (E->getType()->isSliceType())
+    return RValue::getSlice(EmitSliceExpr(E, IgnoreResult, IgnoreResult));
 
   EmitAggExpr(E, AggSlot, IgnoreResult);
   return AggSlot.asRValue();
@@ -122,7 +128,7 @@ RValue CodeGenFunction::EmitAnyExprToTemp(const Expr *E) {
   AggValueSlot AggSlot = AggValueSlot::ignored();
 
   if (hasAggregateLLVMType(E->getType()) &&
-      !E->getType()->isAnyComplexType())
+      !E->getType()->isAnyComplexOrSliceType())
     AggSlot = CreateAggTemp(E->getType(), "agg.tmp");
   return EmitAnyExpr(E, AggSlot);
 }
@@ -135,6 +141,8 @@ void CodeGenFunction::EmitAnyExprToMem(const Expr *E,
                                        bool IsInit) {
   if (E->getType()->isComplexType())
     EmitComplexExprIntoAddr(E, Location, IsLocationVolatile);
+  else if (E->getType()->isSliceType())
+    EmitSliceExprIntoAddr(E, Location, IsLocationVolatile);
   else if (hasAggregateLLVMType(E->getType()))
     EmitAggExpr(E, AggValueSlot::forAddr(Location, IsLocationVolatile, IsInit));
   else {
@@ -276,7 +284,7 @@ EmitExprForReferenceBinding(CodeGenFunction &CGF, const Expr *E,
     // Create a reference temporary if necessary.
     AggValueSlot AggSlot = AggValueSlot::ignored();
     if (CGF.hasAggregateLLVMType(E->getType()) &&
-        !E->getType()->isAnyComplexType()) {
+        !E->getType()->isAnyComplexOrSliceType()) {
       ReferenceTemporary = CreateReferenceTemporary(CGF, E->getType(), 
                                                     InitializedDecl);
       AggSlot = AggValueSlot::forAddr(ReferenceTemporary, false,
@@ -350,6 +358,9 @@ EmitExprForReferenceBinding(CodeGenFunction &CGF, const Expr *E,
   if (RV.isScalar())
     CGF.EmitStoreOfScalar(RV.getScalarVal(), ReferenceTemporary,
                           /*Volatile=*/false, Alignment, E->getType());
+  else if (RV.isSlice())
+    CGF.StoreSliceToAddr(RV.getSliceVal(), ReferenceTemporary,
+                           /*Volatile=*/false);
   else
     CGF.StoreComplexToAddr(RV.getComplexVal(), ReferenceTemporary,
                            /*Volatile=*/false);
@@ -528,9 +539,11 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
   case Expr::BinaryOperatorClass:
     return EmitBinaryOperatorLValue(cast<BinaryOperator>(E));
   case Expr::CompoundAssignOperatorClass:
-    if (!E->getType()->isAnyComplexType())
-      return EmitCompoundAssignmentLValue(cast<CompoundAssignOperator>(E));
-    return EmitComplexCompoundAssignmentLValue(cast<CompoundAssignOperator>(E));
+    if (E->getType()->isAnyComplexType())
+      return EmitComplexCompoundAssignmentLValue(cast<CompoundAssignOperator>(E));
+    if (E->getType()->isSliceType())
+      return EmitSliceCompoundAssignmentLValue(cast<CompoundAssignOperator>(E));
+    return EmitCompoundAssignmentLValue(cast<CompoundAssignOperator>(E));
   case Expr::CallExprClass:
   case Expr::CXXMemberCallExprClass:
   case Expr::CXXOperatorCallExprClass:
@@ -578,6 +591,8 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitUnaryOpLValue(cast<UnaryOperator>(E));
   case Expr::ArraySubscriptExprClass:
     return EmitArraySubscriptExpr(cast<ArraySubscriptExpr>(E));
+  case Expr::ArraySubscriptsExprClass:
+    return EmitArraySubscriptsExpr(cast<ArraySubscriptsExpr>(E));
   case Expr::ExtVectorElementExprClass:
     return EmitExtVectorElementExpr(cast<ExtVectorElementExpr>(E));
   case Expr::MemberExprClass:
@@ -1225,6 +1240,20 @@ LValue CodeGenFunction::EmitBlockDeclRefLValue(const BlockDeclRefExpr *E) {
   return MakeAddrLValue(GetAddrOfBlockDecl(E), E->getType(), Alignment);
 }
 
+LValue CodeGenFunction::EmitSliceDimLValue(const UnaryOperator *E, unsigned Dim) {
+  LValue LV = EmitLValue(E->getSubExpr());
+  assert(LV.isSimple() && "real/imag on non-ordinary l-value");
+  llvm::Value *Addr = LV.getAddress();
+
+  assert(E->getSubExpr()->getType()->isSliceType());
+  const SliceType *STy = cast<SliceType>(E->getSubExpr()->getType());
+
+  Addr = Builder.CreateStructGEP(Addr, 1, "arr");
+  Builder.CreateLoad(Addr);
+  Addr = Builder.CreateStructGEP(Addr, STy->getArrayIdxOfDim(Dim), "idx");
+  return MakeAddrLValue(Addr, getContext().IntTy);
+}
+
 LValue CodeGenFunction::EmitUnaryOpLValue(const UnaryOperator *E) {
   // __extension__ doesn't affect lvalue-ness.
   if (E->getOpcode() == UO_Extension)
@@ -1278,10 +1307,16 @@ LValue CodeGenFunction::EmitUnaryOpLValue(const UnaryOperator *E) {
     
     if (E->getType()->isAnyComplexType())
       EmitComplexPrePostIncDec(E, LV, isInc, true/*isPre*/);
+    else if (E->getType()->isSliceType())
+      EmitSlicePrePostIncDec(E, LV, isInc, true/*isPre*/);
     else
       EmitScalarPrePostIncDec(E, LV, isInc, true/*isPre*/);
     return LV;
   }
+  case UO_SliceDim1:
+    return EmitSliceDimLValue(E, 1);
+  case UO_SliceDim2:
+    return EmitSliceDimLValue(E, 2);
   }
 }
 
@@ -1477,6 +1512,14 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E) {
       Address = Builder.CreateGEP(ArrayPtr, Args, Args+2, "arrayidx");
     else
       Address = Builder.CreateInBoundsGEP(ArrayPtr, Args, Args+2, "arrayidx");
+  } else if (const SliceType *ST =
+               E->getBase()->getType()->getAs<SliceType>()) {
+    SlicePairTy Slice = EmitSliceExpr(E->getBase());
+    llvm::Value *Base = Slice.first;
+    if (getContext().getLangOptions().isSignedOverflowDefined())
+      Address = Builder.CreateGEP(Base, Idx, "arrayidx");
+    else
+      Address = Builder.CreateInBoundsGEP(Base, Idx, "arrayidx");
   } else {
     // The base must be a pointer, which is not an aggregate.  Emit it.
     llvm::Value *Base = EmitScalarExpr(E->getBase());
@@ -1489,6 +1532,86 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E) {
   QualType T = E->getBase()->getType()->getPointeeType();
   assert(!T.isNull() &&
          "CodeGenFunction::EmitArraySubscriptExpr(): Illegal base type");
+
+  // Limit the alignment to that of the result type.
+  if (ArrayAlignment) {
+    unsigned Align = getContext().getTypeAlignInChars(T).getQuantity();
+    ArrayAlignment = std::min(Align, ArrayAlignment);
+  }
+
+  LValue LV = MakeAddrLValue(Address, T, ArrayAlignment);
+  LV.getQuals().setAddressSpace(E->getBase()->getType().getAddressSpace());
+
+  if (getContext().getLangOptions().ObjC1 &&
+      getContext().getLangOptions().getGCMode() != LangOptions::NonGC) {
+    LV.setNonGC(!E->isOBJCGCCandidate(getContext()));
+    setObjCGCLValueClass(getContext(), E, LV);
+  }
+  return LV;
+}
+
+LValue CodeGenFunction::EmitArraySubscriptsExpr(const ArraySubscriptsExpr *E) {
+  assert(E->getBase()->getType()->isSliceType() && "not a slice");
+  const SliceType *ST = E->getBase()->getType()->getAs<SliceType>();
+  SlicePairTy Slice = EmitSliceExpr(E->getBase());
+  /*
+  Slice.first->dump();
+  Slice.second->dump();
+  Slice.first->getType()->dump();
+  Slice.second->getType()->dump();
+  */
+
+  llvm::Value *Address = 0, *TotalIdx = 0;
+  unsigned ArrayAlignment = 0;
+  assert(ST->getNumDims() == E->getNumArgs() && "slice ndims != nargs");
+
+  for (unsigned i = 0, e = E->getNumArgs(); i != e; ++i) {
+    const Expr *Arg = E->getArg(i);
+    llvm::Value *Idx = EmitScalarExpr(Arg);
+    QualType IdxTy = Arg->getType();
+    bool IdxSigned = IdxTy->isSignedIntegerOrEnumerationType();
+
+    // Extend or truncate the index type to 32 or 64-bits.
+    if (Idx->getType() != IntPtrTy)
+      Idx = Builder.CreateIntCast(Idx, IntPtrTy, IdxSigned, "idxprom");
+
+    /*
+    Idx->dump();
+    Idx->getType()->dump();
+    */
+
+    // multiply by stride
+    llvm::Value *Args[] = { llvm::ConstantInt::get(Int32Ty,0),
+                            llvm::ConstantInt::get(Int32Ty,i) };
+    Address = Builder.CreateGEP(Slice.second, Args, Args+2, "sli.stridep");
+    /*
+    Address = Builder.CreateGEP(Slice.second, llvm::ConstantInt::get(Int32Ty,i),
+                                "sli.stridep");
+                                */
+    //Address->dump();
+    llvm::Value *Stride = Builder.CreateLoad(Address, "tmp");
+    //Stride->dump();
+    //Stride->getType()->dump();
+    if (Stride->getType() != Idx->getType())
+      Stride = Builder.CreateIntCast(Stride, Idx->getType(), IdxSigned, "idxprom");
+    Idx = Builder.CreateMul(Idx, Stride);
+    //Idx->dump();
+
+    // accumulate
+    TotalIdx = (i ? Builder.CreateAdd(TotalIdx, Idx) : Idx);
+    //TotalIdx->dump();
+  }
+  //TotalIdx->dump();
+
+  llvm::Value *Base = Slice.first;
+  if (getContext().getLangOptions().isSignedOverflowDefined())
+    Address = Builder.CreateGEP(Base, TotalIdx, "sliceidx");
+  else
+    Address = Builder.CreateInBoundsGEP(Base, TotalIdx, "sliceidx");
+
+  QualType T = E->getBase()->getType()->getPointeeType();
+  assert(!T.isNull() &&
+         "CodeGenFunction::EmitArraySubscriptsExpr(): Illegal base type");
 
   // Limit the alignment to that of the result type.
   if (ArrayAlignment) {
@@ -1744,7 +1867,7 @@ EmitConditionalOperatorLValue(const AbstractConditionalOperator *expr) {
   if (!expr->isGLValue()) {
     // ?: here should be an aggregate.
     assert((hasAggregateLLVMType(expr->getType()) &&
-            !expr->getType()->isAnyComplexType()) &&
+            !expr->getType()->isAnyComplexOrSliceType()) &&
            "Unexpected conditional operator!");
     return EmitAggExprToLValue(expr);
   }
@@ -1860,6 +1983,9 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   case CK_IntegralComplexToBoolean:
   case CK_IntegralComplexCast:
   case CK_IntegralComplexToFloatingComplex:
+  case CK_SliceCast:
+  case CK_PointerToSlice:
+  case CK_SliceToPointer:
   case CK_DerivedToBaseMemberPointer:
   case CK_BaseToDerivedMemberPointer:
   case CK_MemberPointerToBoolean:
@@ -2027,6 +2153,8 @@ LValue CodeGenFunction::EmitBinaryOperatorLValue(const BinaryOperator *E) {
 
   if (E->getType()->isAnyComplexType())
     return EmitComplexAssignmentLValue(E);
+  if (E->getType()->isSliceType())
+    return EmitSliceAssignmentLValue(E);
 
   return EmitAggExprToLValue(E);
 }

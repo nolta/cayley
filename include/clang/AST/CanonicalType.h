@@ -295,6 +295,7 @@ public:
   LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(bool, isUnsignedIntegerOrEnumerationType)
   LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(bool, isConstantSizeType)
   LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(bool, isSpecifierType)
+  LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(bool, isSliceType)
 
   /// \brief Retrieve the proxy-adaptor type.
   ///
@@ -485,6 +486,13 @@ template<>
 struct CanProxyAdaptor<BlockPointerType>
   : public CanProxyBase<BlockPointerType> {
   LLVM_CLANG_CANPROXY_TYPE_ACCESSOR(getPointeeType)
+};
+
+template<>
+struct CanProxyAdaptor<SliceType>
+  : public CanProxyBase<SliceType> {
+  LLVM_CLANG_CANPROXY_TYPE_ACCESSOR(getPointeeType)
+  LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(unsigned, getNumDims)
 };
 
 template<>

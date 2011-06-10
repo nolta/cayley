@@ -237,6 +237,7 @@ public:
   static const TST TST_int = clang::TST_int;
   static const TST TST_float = clang::TST_float;
   static const TST TST_double = clang::TST_double;
+  static const TST TST_quad = clang::TST_quad;
   static const TST TST_bool = clang::TST_bool;
   static const TST TST_decimal32 = clang::TST_decimal32;
   static const TST TST_decimal64 = clang::TST_decimal64;
@@ -949,7 +950,8 @@ typedef llvm::SmallVector<Token, 4> CachedTokens;
 /// This is intended to be a small value object.
 struct DeclaratorChunk {
   enum {
-    Pointer, Reference, Array, Function, BlockPointer, MemberPointer, Paren
+    Pointer, Reference, Array, Function, BlockPointer, MemberPointer, Paren,
+    Slice
   } Kind;
 
   /// Loc - The place where this type was defined.
@@ -973,6 +975,26 @@ struct DeclaratorChunk {
 
     /// The location of the restrict-qualifier, if any.
     unsigned RestrictQualLoc;
+
+    void destroy() {
+    }
+  };
+
+  struct SliceTypeInfo : TypeInfoCommon {
+    /// The type qualifiers: const/volatile/restrict.
+    unsigned TypeQuals : 3;
+
+    /// The location of the const-qualifier, if any.
+    unsigned ConstQualLoc;
+
+    /// The location of the volatile-qualifier, if any.
+    unsigned VolatileQualLoc;
+
+    /// The location of the restrict-qualifier, if any.
+    unsigned RestrictQualLoc;
+
+    /// The number of dimensions.
+    unsigned NumDims;
 
     void destroy() {
     }
@@ -1185,6 +1207,7 @@ struct DeclaratorChunk {
     FunctionTypeInfo      Fun;
     BlockPointerTypeInfo  Cls;
     MemberPointerTypeInfo Mem;
+    SliceTypeInfo         Slc;
   };
 
   void destroy() {
@@ -1196,6 +1219,7 @@ struct DeclaratorChunk {
     case DeclaratorChunk::Reference:     return Ref.destroy();
     case DeclaratorChunk::Array:         return Arr.destroy();
     case DeclaratorChunk::MemberPointer: return Mem.destroy();
+    case DeclaratorChunk::Slice:         return Slc.destroy();
     case DeclaratorChunk::Paren:         return;
     }
   }
@@ -1224,6 +1248,26 @@ struct DeclaratorChunk {
     I.Ptr.VolatileQualLoc = VolatileQualLoc.getRawEncoding();
     I.Ptr.RestrictQualLoc = RestrictQualLoc.getRawEncoding();
     I.Ptr.AttrList        = 0;
+    return I;
+  }
+
+  /// getSlice - Return a DeclaratorChunk for a slice.
+  ///
+  static DeclaratorChunk getSlice(unsigned NumDims,
+                                  unsigned TypeQuals,
+                                  SourceLocation Loc,
+                                  SourceLocation ConstQualLoc,
+                                  SourceLocation VolatileQualLoc,
+                                  SourceLocation RestrictQualLoc) {
+    DeclaratorChunk I;
+    I.Kind                = Slice;
+    I.Loc                 = Loc;
+    I.Slc.TypeQuals       = TypeQuals;
+    I.Slc.ConstQualLoc    = ConstQualLoc.getRawEncoding();
+    I.Slc.VolatileQualLoc = VolatileQualLoc.getRawEncoding();
+    I.Slc.RestrictQualLoc = RestrictQualLoc.getRawEncoding();
+    I.Slc.AttrList        = 0;
+    I.Slc.NumDims         = NumDims;
     return I;
   }
 
@@ -1632,6 +1676,7 @@ public:
       case DeclaratorChunk::Array:
       case DeclaratorChunk::BlockPointer:
       case DeclaratorChunk::MemberPointer:
+      case DeclaratorChunk::Slice:
         return false;
       }
       llvm_unreachable("Invalid type chunk");

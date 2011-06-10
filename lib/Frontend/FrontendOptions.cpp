@@ -28,5 +28,7 @@ InputKind FrontendOptions::getInputKindForExtension(llvm::StringRef Extension) {
     .Case("cl", IK_OpenCL)
     .Case("cu", IK_CUDA)
     .Cases("ll", "bc", IK_LLVM_IR)
+    .Case("cy", IK_Cayley)
+    .Case("cyi", IK_PreprocessedCayley)
     .Default(IK_C);
 }

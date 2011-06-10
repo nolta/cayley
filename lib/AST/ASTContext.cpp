@@ -886,6 +886,14 @@ ASTContext::getTypeInfo(const Type *T) const {
     Align = Target.getPointerAlign(AS);
     break;
   }
+  case Type::Slice: {
+    const SliceType *ST = cast<SliceType>(T);
+    unsigned AS = getTargetAddressSpace(ST->getPointeeType());
+    Width = Target.getPointerWidth(AS)
+          + ST->getArrayLen()*Target.getIntWidth();
+    Align = Target.getPointerAlign(AS);
+    break;
+  }
   case Type::LValueReference:
   case Type::RValueReference: {
     // alignof and sizeof should never enter this code path here, so we go
@@ -1402,6 +1410,34 @@ QualType ASTContext::getPointerType(QualType T) const {
   return QualType(New, 0);
 }
 
+/// getSliceType - Return the uniqued reference to the type for a slice to
+/// the specified type.
+QualType ASTContext::getSliceType(QualType T, unsigned NumDims) const {
+  // Unique slices, to guarantee there is only one slice of a particular
+  // structure.
+  llvm::FoldingSetNodeID ID;
+  SliceType::Profile(ID, T, NumDims);
+
+  void *InsertPos = 0;
+  if (SliceType *PT = SliceTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(PT, 0);
+
+  // If the pointee type isn't canonical, this won't be a canonical type either,
+  // so fill in the canonical type field.
+  QualType Canonical;
+  if (!T.isCanonical()) {
+    Canonical = getSliceType(getCanonicalType(T), NumDims);
+
+    // Get the new insert position for the node we care about.
+    SliceType *NewIP = SliceTypes.FindNodeOrInsertPos(ID, InsertPos);
+    assert(NewIP == 0 && "Shouldn't be in the map!"); (void)NewIP;
+  }
+  SliceType *New = new (*this, TypeAlignment) SliceType(T, Canonical, NumDims);
+  Types.push_back(New);
+  SliceTypes.InsertNode(New, InsertPos);
+  return QualType(New, 0);
+}
+
 /// getBlockPointerType - Return the uniqued reference to the type for
 /// a pointer to the specified block.
 QualType ASTContext::getBlockPointerType(QualType T) const {
@@ -1637,6 +1673,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::FunctionProto:
   case Type::BlockPointer:
   case Type::MemberPointer:
+  case Type::Slice: // ???
     return type;
 
   // These types can be variably-modified.  All these modifications
@@ -5704,6 +5741,29 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
     if (getCanonicalType(RHSPointee) == getCanonicalType(ResultType))
       return RHS;
     return getBlockPointerType(ResultType);
+  }
+  case Type::Slice:
+  {
+    // Merge two slice types, while trying to preserve typedef info
+    const SliceType *LST = LHS->getAs<SliceType>();
+    const SliceType *RST = RHS->getAs<SliceType>();
+    if (LST && RST && LST->getNumDims() != RST->getNumDims())
+      return QualType();
+
+    QualType LHSPointee = LST->getPointeeType();
+    QualType RHSPointee = RST->getPointeeType();
+    if (Unqualified) {
+      LHSPointee = LHSPointee.getUnqualifiedType();
+      RHSPointee = RHSPointee.getUnqualifiedType();
+    }
+    QualType ResultType = mergeTypes(LHSPointee, RHSPointee, false,
+                                     Unqualified);
+    if (ResultType.isNull()) return QualType();
+    if (getCanonicalType(LHSPointee) == getCanonicalType(ResultType))
+      return LHS;
+    if (getCanonicalType(RHSPointee) == getCanonicalType(ResultType))
+      return RHS;
+    return getSliceType(ResultType, LST->getNumDims());
   }
   case Type::ConstantArray:
   {

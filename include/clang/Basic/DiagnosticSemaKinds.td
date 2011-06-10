@@ -2614,7 +2614,7 @@ def err_arithmetic_nonfragile_interface : Error<
 def ext_subscript_non_lvalue : Extension<
   "ISO C90 does not allow subscripting non-lvalue array">;
 def err_typecheck_subscript_value : Error<
-  "subscripted value is not an array, pointer, or vector">;
+  "subscripted value is not an array, pointer, vector, or slice">;
 def err_typecheck_subscript_not_integer : Error<
   "array subscript is not an integer">;
 def err_subscript_function_type : Error<
@@ -3861,6 +3861,8 @@ def err_generic_sel_no_match : Error<
 def err_generic_sel_multi_match : Error<
   "controlling expression type %0 compatible with %1 generic association types">;
 
+// Slices
+def err_slices_disable : Error<"slice support disabled">;
 
 // Blocks
 def err_blocks_disable : Error<"blocks support disabled - compile with -fblocks"

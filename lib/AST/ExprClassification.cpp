@@ -162,6 +162,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::SizeOfPackExprClass:
   case Expr::SubstNonTypeTemplateParmPackExprClass:
   case Expr::AsTypeExprClass:
+  case Expr::SliceExprClass:
     return Cl::CL_PRValue;
 
     // Next come the complicated cases.
@@ -171,6 +172,9 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::ArraySubscriptExprClass:
     if (cast<ArraySubscriptExpr>(E)->getBase()->getType()->isVectorType())
       return ClassifyInternal(Ctx, cast<ArraySubscriptExpr>(E)->getBase());
+    return Cl::CL_LValue;
+
+  case Expr::ArraySubscriptsExprClass:
     return Cl::CL_LValue;
 
     // C++ [expr.prim.general]p3: The result is an lvalue if the entity is a

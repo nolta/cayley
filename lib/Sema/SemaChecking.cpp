@@ -2149,6 +2149,20 @@ do {
     return EvalAddr(cast<ArraySubscriptExpr>(E)->getBase(), refVars);
   }
 
+  case Stmt::ArraySubscriptsExprClass: {
+    // Array subscripts are potential references to data on the stack.  We
+    // retrieve the DeclRefExpr* for the array variable if it indeed
+    // has local storage.
+    return EvalAddr(cast<ArraySubscriptExpr>(E)->getBase(), refVars);
+  }
+
+  case Stmt::SliceExprClass: {
+    // Array subscripts are potential references to data on the stack.  We
+    // retrieve the DeclRefExpr* for the array variable if it indeed
+    // has local storage.
+    return EvalAddr(cast<SliceExpr>(E)->getBase(), refVars);
+  }
+
   case Stmt::ConditionalOperatorClass: {
     // For conditional operators we need to see if either the LHS or RHS are
     // non-NULL Expr's.  If one is non-NULL, we return it.

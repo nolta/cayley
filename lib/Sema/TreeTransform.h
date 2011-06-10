@@ -576,6 +576,13 @@ public:
   QualType RebuildMemberPointerType(QualType PointeeType, QualType ClassType,
                                     SourceLocation Sigil);
 
+  /// \brief Build a new slice type given its pointee type.
+  ///
+  /// By default, performs semantic analysis when building the slice
+  /// type. Subclasses may override this routine to provide different behavior.
+  QualType RebuildSliceType(QualType PointeeType, unsigned NumDims,
+                            SourceLocation Sigil);
+
   /// \brief Build a new array type given the element type, size
   /// modifier, size of the array (if known), size expression, and index type
   /// qualifiers.
@@ -1397,6 +1404,31 @@ public:
     return getSema().ActOnArraySubscriptExpr(/*Scope=*/0, LHS,
                                              LBracketLoc, RHS,
                                              RBracketLoc);
+  }
+
+  /// \brief Build a new array subscript expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildArraySubscriptsExpr(Expr *LHS,
+                                              SourceLocation LBracketLoc,
+                                              MultiExprArg Args,
+                                              SourceLocation RBracketLoc) {
+    return getSema().ActOnArraySubscriptsExpr(/*Scope=*/0, LHS,
+                                              LBracketLoc, move(Args),
+                                              RBracketLoc);
+  }
+
+  /// \brief Build a new slice expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildSliceExpr(Expr *LHS, SourceLocation LBracketLoc,
+                              MultiExprArg Args,
+                              SourceLocation RBracketLoc) {
+    return getSema().ActOnSliceExpr(/*Scope=*/0, LHS,
+                                    LBracketLoc, move(Args),
+                                    RBracketLoc);
   }
 
   /// \brief Build a new call expression.
@@ -3335,6 +3367,31 @@ QualType TreeTransform<Derived>::TransformPointerType(TypeLocBuilder &TLB,
   }
                                                             
   PointerTypeLoc NewT = TLB.push<PointerTypeLoc>(Result);
+  NewT.setSigilLoc(TL.getSigilLoc());
+  return Result;  
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformSliceType(TypeLocBuilder &TLB,
+                                                    SliceTypeLoc TL) {
+  const SliceType *T = TL.getTypePtr();
+  QualType PointeeType                                      
+    = getDerived().TransformType(TLB, TL.getPointeeLoc());  
+  if (PointeeType.isNull())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() ||
+      PointeeType != TL.getPointeeLoc().getType()) {
+    Result = getDerived().RebuildSliceType(PointeeType,
+                                           T->getNumDims(),
+                                           TL.getSigilLoc());
+    if (Result.isNull())
+      return QualType();
+  }
+                                                            
+  SliceTypeLoc NewT = TLB.push<SliceTypeLoc>(Result);
+  //NewT.setNumDims(T->getNumDims());
   NewT.setSigilLoc(TL.getSigilLoc());
   return Result;  
 }
@@ -5936,6 +5993,56 @@ TreeTransform<Derived>::TransformArraySubscriptExpr(ArraySubscriptExpr *E) {
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformArraySubscriptsExpr(ArraySubscriptsExpr *E) {
+  ExprResult LHS = getDerived().TransformExpr(E->getLHS());
+  if (LHS.isInvalid())
+    return ExprError();
+
+  // Transform arguments.
+  bool ArgChanged = false;
+  ASTOwningVector<Expr*> Args(SemaRef);
+  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args, 
+                                  &ArgChanged))
+    return ExprError();
+  
+  if (!getDerived().AlwaysRebuild() &&
+      LHS.get() == E->getLHS() &&
+      !ArgChanged)
+    return SemaRef.Owned(E);
+
+  return getDerived().RebuildArraySubscriptsExpr(LHS.get(),
+                                       /*FIXME:*/E->getLHS()->getLocStart(),
+                                                 move_arg(Args),
+                                                 E->getRBracketLoc());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformSliceExpr(SliceExpr *E) {
+  ExprResult LHS = getDerived().TransformExpr(E->getLHS());
+  if (LHS.isInvalid())
+    return ExprError();
+
+  // Transform arguments.
+  bool ArgChanged = false;
+  ASTOwningVector<Expr*> Args(SemaRef);
+  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args, 
+                                  &ArgChanged))
+    return ExprError();
+  
+  if (!getDerived().AlwaysRebuild() &&
+      LHS.get() == E->getLHS() &&
+      !ArgChanged)
+    return SemaRef.Owned(E);
+
+  return getDerived().RebuildSliceExpr(LHS.get(),
+                                       /*FIXME:*/E->getLHS()->getLocStart(),
+                                       move_arg(Args),
+                                       E->getRBracketLoc());
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformCallExpr(CallExpr *E) {
   // Transform the callee.
   ExprResult Callee = getDerived().TransformExpr(E->getCallee());
@@ -7894,6 +8001,14 @@ QualType TreeTransform<Derived>::RebuildPointerType(QualType PointeeType,
                                                     SourceLocation Star) {
   return SemaRef.BuildPointerType(PointeeType, Star,
                                   getDerived().getBaseEntity());
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::RebuildSliceType(QualType PointeeType,
+                                                  unsigned NumDims,
+                                                  SourceLocation Dollar) {
+  return SemaRef.BuildSliceType(PointeeType, NumDims, Dollar,
+                                getDerived().getBaseEntity());
 }
 
 template<typename Derived>

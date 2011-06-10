@@ -34,7 +34,7 @@ namespace CodeGen {
 /// simple LLVM SSA value, a pair of SSA values for complex numbers, or the
 /// address of an aggregate value in memory.
 class RValue {
-  enum Flavor { Scalar, Complex, Aggregate };
+  enum Flavor { Scalar, Complex, Aggregate, Slice };
 
   // Stores first value and flavor.
   llvm::PointerIntPair<llvm::Value *, 2, Flavor> V1;
@@ -45,6 +45,7 @@ public:
   bool isScalar() const { return V1.getInt() == Scalar; }
   bool isComplex() const { return V1.getInt() == Complex; }
   bool isAggregate() const { return V1.getInt() == Aggregate; }
+  bool isSlice() const { return V1.getInt() == Slice; }
 
   bool isVolatileQualified() const { return V2.getInt(); }
 
@@ -57,6 +58,10 @@ public:
   /// getComplexVal - Return the real/imag components of this complex value.
   ///
   std::pair<llvm::Value *, llvm::Value *> getComplexVal() const {
+    return std::make_pair(V1.getPointer(), V2.getPointer());
+  }
+
+  std::pair<llvm::Value *, llvm::Value *> getSliceVal() const {
     return std::make_pair(V1.getPointer(), V2.getPointer());
   }
 
@@ -93,6 +98,17 @@ public:
     ER.V1.setInt(Aggregate);
     ER.V2.setInt(Volatile);
     return ER;
+  }
+  static RValue getSlice(llvm::Value *V1, llvm::Value *V2) {
+    RValue ER;
+    ER.V1.setPointer(V1);
+    ER.V2.setPointer(V2);
+    ER.V1.setInt(Slice);
+    ER.V2.setInt(false);
+    return ER;
+  }
+  static RValue getSlice(const std::pair<llvm::Value *, llvm::Value *> &C) {
+    return getSlice(C.first, C.second);
   }
 };
 

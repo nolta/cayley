@@ -2282,6 +2282,9 @@ const char *darwin::CC1::getCC1Name(types::ID Type) const {
   case types::TY_Asm:
   case types::TY_C: case types::TY_CHeader:
   case types::TY_PP_C: case types::TY_PP_CHeader:
+  // XXX: should this be "cc1cayley"?
+  case types::TY_Cayley: case types::TY_CayleyHeader:
+  case types::TY_PP_Cayley: case types::TY_PP_CayleyHeader:
     return "cc1";
   case types::TY_ObjC: case types::TY_ObjCHeader:
   case types::TY_PP_ObjC: case types::TY_PP_ObjCHeader:

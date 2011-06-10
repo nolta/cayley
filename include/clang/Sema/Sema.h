@@ -803,6 +803,8 @@ public:
                                   DeclarationName Entity);
   QualType BuildBlockPointerType(QualType T,
                                  SourceLocation Loc, DeclarationName Entity);
+  QualType BuildSliceType(QualType T, unsigned NumDims,
+                          SourceLocation Loc, DeclarationName Entity);
   QualType BuildParenType(QualType T);
 
   TypeSourceInfo *GetTypeForDeclarator(Declarator &D, Scope *S,
@@ -2292,6 +2294,12 @@ public:
                                      Expr *Idx, SourceLocation RLoc);
   ExprResult CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
                                              Expr *Idx, SourceLocation RLoc);
+
+  ExprResult ActOnArraySubscriptsExpr(Scope *S, Expr *Base, SourceLocation LLoc,
+                                      MultiExprArg Idxs, SourceLocation RLoc);
+
+  ExprResult ActOnSliceExpr(Scope *S, Expr *Base, SourceLocation LLoc,
+                            MultiExprArg Idxs, SourceLocation RLoc);
 
   ExprResult BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
                                       SourceLocation OpLoc, bool IsArrow,

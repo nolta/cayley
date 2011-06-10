@@ -82,10 +82,12 @@ bool types::isAcceptedByClang(ID Id) {
   case TY_ObjC: case TY_PP_ObjC:
   case TY_CXX: case TY_PP_CXX:
   case TY_ObjCXX: case TY_PP_ObjCXX:
+  case TY_Cayley: case TY_PP_Cayley:
   case TY_CHeader: case TY_PP_CHeader:
   case TY_ObjCHeader: case TY_PP_ObjCHeader:
   case TY_CXXHeader: case TY_PP_CXXHeader:
   case TY_ObjCXXHeader: case TY_PP_ObjCXXHeader:
+  case TY_CayleyHeader: case TY_PP_CayleyHeader:
   case TY_AST:
   case TY_LLVM_IR: case TY_LLVM_BC:
     return true;
@@ -114,6 +116,17 @@ bool types::isObjC(ID Id) {
   case TY_ObjCXX: case TY_PP_ObjCXX:
   case TY_ObjCHeader: case TY_PP_ObjCHeader:
   case TY_ObjCXXHeader: case TY_PP_ObjCXXHeader:
+    return true;
+  }
+}
+
+bool types::isCayley(ID Id) {
+  switch (Id) {
+  default:
+    return false;
+
+  case TY_Cayley: case TY_PP_Cayley:
+  case TY_CayleyHeader: case TY_PP_CayleyHeader:
     return true;
   }
 }
@@ -153,6 +166,7 @@ types::ID types::lookupTypeForExtension(const char *Ext) {
            .Case("cl", TY_CL)
            .Case("cp", TY_CXX)
            .Case("cu", TY_CUDA)
+           .Case("cy", TY_Cayley)
            .Case("hh", TY_CXXHeader)
            .Case("ll", TY_LLVM_IR)
            .Case("hpp", TY_CXXHeader)
@@ -165,6 +179,7 @@ types::ID types::lookupTypeForExtension(const char *Ext) {
            .Case("cpp", TY_CXX)
            .Case("CPP", TY_CXX)
            .Case("CXX", TY_CXX)
+           .Case("cyi", TY_PP_Cayley)
            .Case("for", TY_PP_Fortran)
            .Case("FOR", TY_PP_Fortran)
            .Case("fpp", TY_Fortran)

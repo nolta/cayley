@@ -107,6 +107,12 @@ public:
   Value *EmitComplexToScalarConversion(CodeGenFunction::ComplexPairTy Src,
                                        QualType SrcTy, QualType DstTy);
 
+  /// EmitSliceToScalarConversion - Emit a conversion from the specified
+  /// slice type to the specified destination type, where the destination type
+  /// is an LLVM scalar type.
+  Value *EmitSliceToScalarConversion(CodeGenFunction::SlicePairTy Src,
+                                     QualType SrcTy, QualType DstTy);
+
   /// EmitNullValue - Emit a value that corresponds to null for the given type.
   Value *EmitNullValue(QualType Ty);
 
@@ -257,6 +263,7 @@ public:
   }
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);
+  Value *VisitArraySubscriptsExpr(ArraySubscriptsExpr *E);
   Value *VisitShuffleVectorExpr(ShuffleVectorExpr *E);
   Value *VisitMemberExpr(MemberExpr *E);
   Value *VisitExtVectorElementExpr(Expr *E) { return EmitLoadOfLValue(E); }
@@ -339,6 +346,13 @@ public:
   Value *VisitUnaryImag     (const UnaryOperator *E);
   Value *VisitUnaryExtension(const UnaryOperator *E) {
     return Visit(E->getSubExpr());
+  }
+  Value *VisitUnarySliceDim(const UnaryOperator *E, unsigned Dim);
+  Value *VisitUnarySliceDim1(const UnaryOperator *E) {
+    return VisitUnarySliceDim(E, 1);
+  }
+  Value *VisitUnarySliceDim2(const UnaryOperator *E) {
+    return VisitUnarySliceDim(E, 2);
   }
     
   // C++
@@ -659,6 +673,17 @@ EmitComplexToScalarConversion(CodeGenFunction::ComplexPairTy Src,
   return EmitScalarConversion(Src.first, SrcTy, DstTy);
 }
 
+/// EmitSliceToScalarConversion - Emit a conversion from the specified slice
+/// type to the specified destination type, where the destination type is an
+/// LLVM scalar type.
+Value *ScalarExprEmitter::
+EmitSliceToScalarConversion(CodeGenFunction::SlicePairTy Src,
+                            QualType SrcTy, QualType DstTy) {
+  // Get the source element type.
+  SrcTy = SrcTy->getAs<SliceType>()->getPointeeType();
+  return EmitScalarConversion(Src.first, SrcTy, DstTy);
+}
+
 Value *ScalarExprEmitter::EmitNullValue(QualType Ty) {
   if (const MemberPointerType *MPT = Ty->getAs<MemberPointerType>())
     return CGF.CGM.getCXXABI().EmitNullMemberPointer(MPT);
@@ -811,6 +836,11 @@ Value *ScalarExprEmitter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   bool IdxSigned = E->getIdx()->getType()->isSignedIntegerOrEnumerationType();
   Idx = Builder.CreateIntCast(Idx, CGF.Int32Ty, IdxSigned, "vecidxcast");
   return Builder.CreateExtractElement(Base, Idx, "vecext");
+}
+
+Value *ScalarExprEmitter::VisitArraySubscriptsExpr(ArraySubscriptsExpr *E) {
+  TestAndClearIgnoreResultAssign();
+  return EmitLoadOfLValue(E);
 }
 
 static llvm::Constant *getMaskElt(llvm::ShuffleVectorInst *SVI, unsigned Idx,
@@ -1207,6 +1237,20 @@ Value *ScalarExprEmitter::EmitCastExpr(CastExpr *CE) {
     return EmitComplexToScalarConversion(V, E->getType(), DestTy);
   }
 
+  case CK_IntegralToSlice:
+  case CK_NullToSlice:
+  case CK_PointerToSlice:
+  case CK_SliceCast:
+    llvm_unreachable("scalar cast to non-scalar value");
+    break;
+
+  case CK_SliceToBoolean:
+  case CK_SliceToIntegral:
+  case CK_SliceToPointer: {
+    CodeGenFunction::SlicePairTy V = CGF.EmitSliceExpr(E);
+    return EmitSliceToScalarConversion(V, E->getType(), DestTy);
+  }
+
   }
 
   llvm_unreachable("unknown scalar cast");
@@ -1574,6 +1618,19 @@ Value *ScalarExprEmitter::VisitUnaryImag(const UnaryOperator *E) {
   // effects are evaluated, but not the actual value.
   CGF.EmitScalarExpr(Op, true);
   return llvm::Constant::getNullValue(ConvertType(E->getType()));
+}
+
+Value *ScalarExprEmitter::VisitUnarySliceDim(const UnaryOperator *E, unsigned Dim) {
+  Expr *Op = E->getSubExpr();
+  assert(Op->getType()->isSliceType());
+  const SliceType *STy = cast<SliceType>(Op->getType());
+
+  Value *Addr = CGF.EmitSliceExpr(Op, true, false).second;
+  Addr = Builder.CreateStructGEP(Addr, STy->getArrayIdxOfDim(Dim-1), "idx");
+  Addr->dump();
+  Addr = Builder.CreateLoad(Addr);
+  Addr->dump();
+  return Addr;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2636,6 +2693,17 @@ Value *CodeGenFunction::EmitComplexToScalarConversion(ComplexPairTy Src,
                                                                 DstTy);
 }
 
+/// EmitSliceToScalarConversion - Emit a conversion from the specified slice
+/// type to the specified destination type, where the destination type is an
+/// LLVM scalar type.
+Value *CodeGenFunction::EmitSliceToScalarConversion(SlicePairTy Src,
+                                                    QualType SrcTy,
+                                                    QualType DstTy) {
+  assert(SrcTy->isSliceType() && !hasAggregateLLVMType(DstTy) &&
+         "Invalid slice -> scalar conversion");
+  return ScalarExprEmitter(*this).EmitSliceToScalarConversion(Src, SrcTy,
+                                                              DstTy);
+}
 
 llvm::Value *CodeGenFunction::
 EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,

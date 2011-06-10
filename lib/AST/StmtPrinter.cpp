@@ -803,6 +803,26 @@ void StmtPrinter::VisitArraySubscriptExpr(ArraySubscriptExpr *Node) {
   OS << "]";
 }
 
+void StmtPrinter::VisitArraySubscriptsExpr(ArraySubscriptsExpr *Node) {
+  PrintExpr(Node->getLHS());
+  OS << "[";
+  for (unsigned i = 0, e = Node->getNumArgs(); i != e; ++i) {
+    if (i) OS << ", ";
+    PrintExpr(Node->getArg(i));
+  }
+  OS << "]";
+}
+
+void StmtPrinter::VisitSliceExpr(SliceExpr *Node) {
+  PrintExpr(Node->getLHS());
+  OS << "/[";
+  for (unsigned i = 0, e = Node->getNumArgs(); i != e; ++i) {
+    if (i) OS << ", ";
+    PrintExpr(Node->getArg(i));
+  }
+  OS << "]";
+}
+
 void StmtPrinter::PrintCallArgs(CallExpr *Call) {
   for (unsigned i = 0, e = Call->getNumArgs(); i != e; ++i) {
     if (isa<CXXDefaultArgExpr>(Call->getArg(i))) {

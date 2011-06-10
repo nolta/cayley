@@ -580,6 +580,7 @@ void MicrosoftCXXNameMangler::mangleQualifiers(Qualifiers Quals,
   //                       ::= _C <basis> # based method (pointers only)
   //                       ::= _D <basis> # based method (far?) (pointers only)
   //                       ::= _E # block (Clang)
+  //                       ::= _F # slice (Cayley)
   // <basis> ::= 0 # __based(void)
   //         ::= 1 # __based(segment)?
   //         ::= 2 <name> # __based(name)
@@ -1076,6 +1077,11 @@ void MicrosoftCXXNameMangler::mangleType(const ObjCObjectType *T) {
 
 void MicrosoftCXXNameMangler::mangleType(const BlockPointerType *T) {
   Out << "_E";
+  mangleType(T->getPointeeType());
+}
+
+void MicrosoftCXXNameMangler::mangleType(const SliceType *T) {
+  Out << "_F";
   mangleType(T->getPointeeType());
 }
 

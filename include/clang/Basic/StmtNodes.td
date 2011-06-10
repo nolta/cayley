@@ -57,6 +57,8 @@ def UnaryOperator : DStmt<Expr>;
 def OffsetOfExpr : DStmt<Expr>;
 def UnaryExprOrTypeTraitExpr : DStmt<Expr>;
 def ArraySubscriptExpr : DStmt<Expr>;
+def ArraySubscriptsExpr : DStmt<Expr>;
+def SliceExpr : DStmt<Expr>;
 def CallExpr : DStmt<Expr>;
 def MemberExpr : DStmt<Expr>;
 def CastExpr : DStmt<Expr, 1>;

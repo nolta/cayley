@@ -48,6 +48,8 @@ public:
   unsigned ObjCDefaultSynthProperties : 1; // Objective-C auto-synthesized properties.
   unsigned AppleKext         : 1;  // Allow apple kext features.
 
+  unsigned Cayley            : 1; // Cayley support enabled.
+
   unsigned PascalStrings     : 1;  // Allow Pascal strings
   unsigned WritableStrings   : 1;  // Allow writable strings
   unsigned ConstStrings      : 1;  // Add const qualifier to strings (-Wwrite-strings)
@@ -184,6 +186,7 @@ public:
     LaxVectorConversions = 1;
     HeinousExtensions = 0;
     AltiVec = OpenCL = CUDA = StackProtector = 0;
+    Cayley = 0;
 
     SymbolVisibility = (unsigned) DefaultVisibility;
 

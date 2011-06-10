@@ -1860,6 +1860,11 @@ void CXXNameMangler::mangleType(const BlockPointerType *T) {
   mangleType(T->getPointeeType());
 }
 
+void CXXNameMangler::mangleType(const SliceType *T) {
+  Out << "U14slice";
+  mangleType(T->getPointeeType());
+}
+
 void CXXNameMangler::mangleType(const InjectedClassNameType *T) {
   // Mangle injected class name types as if the user had written the
   // specialization out fully.  It may not actually be possible to see
@@ -2075,6 +2080,7 @@ void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
     break;
 
   // FIXME: invent manglings for all these.
+  case Expr::ArraySubscriptsExprClass:
   case Expr::BlockExprClass:
   case Expr::CXXPseudoDestructorExprClass:
   case Expr::ChooseExprClass:

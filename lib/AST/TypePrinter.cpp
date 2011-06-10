@@ -116,6 +116,7 @@ void TypePrinter::print(const Type *T, Qualifiers Quals, std::string &buffer) {
       
     case Type::Pointer:
     case Type::BlockPointer:
+    case Type::Slice:
     case Type::LValueReference:
     case Type::RValueReference:
     case Type::MemberPointer:
@@ -192,6 +193,12 @@ void TypePrinter::printPointer(const PointerType *T, std::string &S) {
   if (isa<ArrayType>(T->getPointeeType()))
     S = '(' + S + ')';
   
+  print(T->getPointeeType(), S);
+}
+
+void TypePrinter::printSlice(const SliceType *T, std::string &S) {
+  for(unsigned i = 0; i < T->getNumDims(); i++)
+    S = '$' + S;
   print(T->getPointeeType(), S);
 }
 

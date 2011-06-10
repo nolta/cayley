@@ -641,6 +641,7 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
   case TST_int:
   case TST_float:
   case TST_double:
+  case TST_quad:
   case TST_bool:
   case TST_decimal32:
   case TST_decimal64:
@@ -667,6 +668,7 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
     case DeclaratorChunk::Array:
     case DeclaratorChunk::Function:
     case DeclaratorChunk::BlockPointer:
+    case DeclaratorChunk::Slice:
       // Syntactically, these kinds of declarator chunks all come after the
       // declarator-id (conceptually), so the parser should not invoke this
       // routine at this time.

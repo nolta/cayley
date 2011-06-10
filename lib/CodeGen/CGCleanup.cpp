@@ -57,6 +57,17 @@ DominatingValue<RValue>::saved_type::save(CodeGenFunction &CGF, RValue rv) {
     return saved_type(addr, ComplexAddress);
   }
 
+  if (rv.isSlice()) {
+    CodeGenFunction::SlicePairTy V = rv.getSliceVal();
+    const llvm::Type *SliceTy =
+      llvm::StructType::get(CGF.getLLVMContext(),
+                            V.first->getType(), V.second->getType(),
+                            (void*) 0);
+    llvm::Value *addr = CGF.CreateTempAlloca(SliceTy, "saved-slice");
+    CGF.StoreSliceToAddr(V, addr, /*volatile*/ false);
+    return saved_type(addr, SliceAddress);
+  }
+
   assert(rv.isAggregate());
   llvm::Value *V = rv.getAggregateAddr(); // TODO: volatile?
   if (!DominatingLLVMValue::needsSaving(V))
@@ -82,6 +93,8 @@ RValue DominatingValue<RValue>::saved_type::restore(CodeGenFunction &CGF) {
     return RValue::getAggregate(CGF.Builder.CreateLoad(Value));
   case ComplexAddress:
     return RValue::getComplex(CGF.LoadComplexFromAddr(Value, false));
+  case SliceAddress:
+    return RValue::getSlice(CGF.LoadSliceFromAddr(Value, false));
   }
 
   llvm_unreachable("bad saved r-value kind");

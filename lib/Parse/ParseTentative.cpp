@@ -507,10 +507,12 @@ Parser::TPResult Parser::TryParseDeclarator(bool mayBeAbstract,
         return TPResult::Error();
 
     if (Tok.is(tok::star) || Tok.is(tok::amp) || Tok.is(tok::caret) ||
-        Tok.is(tok::ampamp) ||
+        Tok.is(tok::ampamp) || Tok.is(tok::dollar) ||
         (Tok.is(tok::annot_cxxscope) && NextToken().is(tok::star))) {
       // ptr-operator
       ConsumeToken();
+      while (Tok.is(tok::dollar))
+        ConsumeToken();
       while (Tok.is(tok::kw_const)    ||
              Tok.is(tok::kw_volatile) ||
              Tok.is(tok::kw_restrict))
@@ -667,12 +669,15 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw___is_trivially_copyable:
   case tok::kw___is_union:
   case tok::kw___uuidof:
+  case tok::kw___slice_dim1:
+  case tok::kw___slice_dim2:
     return TPResult::True();
       
   // Obviously starts a type-specifier-seq:
   case tok::kw_char:
   case tok::kw_const:
   case tok::kw_double:
+  case tok::kw_quad:
   case tok::kw_enum:
   case tok::kw_float:
   case tok::kw_int:
@@ -979,6 +984,7 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
   case tok::kw_unsigned:
   case tok::kw_float:
   case tok::kw_double:
+  case tok::kw_quad:
   case tok::kw_void:
     if (NextToken().is(tok::l_paren))
       return TPResult::Ambiguous();

@@ -27,6 +27,7 @@ add_clang_library(clangCodeGen
   CGExprConstant.cpp
   CGExprCXX.cpp
   CGExprScalar.cpp
+  CGExprSlice.cpp
   CGObjC.cpp
   CGObjCGNU.cpp
   CGObjCMac.cpp

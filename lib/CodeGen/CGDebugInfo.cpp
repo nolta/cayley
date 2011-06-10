@@ -430,6 +430,25 @@ llvm::DIType CGDebugInfo::CreateType(const PointerType *Ty,
                                Ty->getPointeeType(), Unit);
 }
 
+llvm::DIType CGDebugInfo::CreateType(const SliceType *Ty,
+                                     llvm::DIFile Unit) {
+    // FIXME -- see block pointer
+  return CreatePointerLikeType(llvm::dwarf::DW_TAG_pointer_type, Ty, 
+                               Ty->getPointeeType(), Unit);
+  // Bit size, align and offset of the type.
+  unsigned Encoding = llvm::dwarf::DW_ATE_complex_float;
+  if (Ty->isComplexIntegerType())
+    Encoding = llvm::dwarf::DW_ATE_lo_user;
+
+  uint64_t Size = CGM.getContext().getTypeSize(Ty);
+  uint64_t Align = CGM.getContext().getTypeAlign(Ty);
+  llvm::DIType DbgTy = 
+    DBuilder.createBasicType("complex", Size, Align, Encoding);
+
+  return DbgTy;
+}
+
+
 /// CreatePointeeType - Create PointTee type. If Pointee is a record
 /// then emit record's fwd if debug info size reduction is enabled.
 llvm::DIType CGDebugInfo::CreatePointeeType(QualType PointeeTy,
@@ -1537,6 +1556,7 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty,
   case Type::Pointer: return CreateType(cast<PointerType>(Ty), Unit);
   case Type::BlockPointer:
     return CreateType(cast<BlockPointerType>(Ty), Unit);
+  case Type::Slice: return CreateType(cast<SliceType>(Ty), Unit);
   case Type::Typedef: return CreateType(cast<TypedefType>(Ty), Unit);
   case Type::Record:
   case Type::Enum:

@@ -222,6 +222,7 @@ RValue CodeGenFunction::EmitCompoundStmt(const CompoundStmt &S, bool GetLast,
 
     EnsureInsertPoint();
 
+    llvm::errs() << "debug:emitcompoundstmt!\n";
     RV = EmitAnyExpr(cast<Expr>(LastStmt), AggSlot);
   }
 
@@ -722,6 +723,8 @@ void CodeGenFunction::EmitReturnOfRValue(RValue RV, QualType Ty) {
     Builder.CreateStore(RV.getScalarVal(), ReturnValue);
   } else if (RV.isAggregate()) {
     EmitAggregateCopy(ReturnValue, RV.getAggregateAddr(), Ty);
+  } else if (RV.isSlice()) {
+    StoreSliceToAddr(RV.getSliceVal(), ReturnValue, false);
   } else {
     StoreComplexToAddr(RV.getComplexVal(), ReturnValue, false);
   }
@@ -763,6 +766,8 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
     Builder.CreateStore(EmitScalarExpr(RV), ReturnValue);
   } else if (RV->getType()->isAnyComplexType()) {
     EmitComplexExprIntoAddr(RV, ReturnValue, false);
+  } else if (RV->getType()->isSliceType()) {
+    EmitSliceExprIntoAddr(RV, ReturnValue, false);
   } else {
     EmitAggExpr(RV, AggValueSlot::forAddr(ReturnValue, false, true));
   }

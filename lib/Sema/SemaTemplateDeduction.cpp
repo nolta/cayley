@@ -3919,6 +3919,7 @@ MarkUsedTemplateParameters(Sema &SemaRef, QualType T,
   case Type::ObjCInterface:
   case Type::ObjCObject:
   case Type::ObjCObjectPointer:
+  case Type::Slice:
   case Type::UnresolvedUsing:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)

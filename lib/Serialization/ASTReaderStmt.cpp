@@ -99,6 +99,8 @@ namespace clang {
     void VisitOffsetOfExpr(OffsetOfExpr *E);
     void VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E);
     void VisitArraySubscriptExpr(ArraySubscriptExpr *E);
+    void VisitArraySubscriptsExpr(ArraySubscriptsExpr *E);
+    void VisitSliceExpr(SliceExpr *E);
     void VisitCallExpr(CallExpr *E);
     void VisitMemberExpr(MemberExpr *E);
     void VisitCastExpr(CastExpr *E);
@@ -578,6 +580,24 @@ void ASTStmtReader::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   E->setLHS(Reader.ReadSubExpr());
   E->setRHS(Reader.ReadSubExpr());
   E->setRBracketLoc(ReadSourceLocation(Record, Idx));
+}
+
+void ASTStmtReader::VisitArraySubscriptsExpr(ArraySubscriptsExpr *E) {
+  VisitExpr(E);
+  E->setNumArgs(*Reader.getContext(), Record[Idx++]);
+  E->setRBracketLoc(ReadSourceLocation(Record, Idx));
+  E->setLHS(Reader.ReadSubExpr());
+  for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
+    E->setArg(I, Reader.ReadSubExpr());
+}
+
+void ASTStmtReader::VisitSliceExpr(SliceExpr *E) {
+  VisitExpr(E);
+  E->setNumArgs(*Reader.getContext(), Record[Idx++]);
+  E->setRBracketLoc(ReadSourceLocation(Record, Idx));
+  E->setLHS(Reader.ReadSubExpr());
+  for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
+    E->setArg(I, Reader.ReadSubExpr());
 }
 
 void ASTStmtReader::VisitCallExpr(CallExpr *E) {
@@ -1624,6 +1644,14 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
 
     case EXPR_ARRAY_SUBSCRIPT:
       S = new (Context) ArraySubscriptExpr(Empty);
+      break;
+
+    case EXPR_ARRAY_SUBSCRIPTS:
+      S = new (Context) ArraySubscriptsExpr(Empty);
+      break;
+
+    case EXPR_SLICE:
+      S = new (Context) SliceExpr(Empty);
       break;
 
     case EXPR_CALL:

@@ -80,6 +80,7 @@ PCHValidator::ReadLanguageOptions(const LangOptions &LangOpts) {
   PARSE_LANGOPT_BENIGN(HexFloats);
   PARSE_LANGOPT_IMPORTANT(C99, diag::warn_pch_c99);
   PARSE_LANGOPT_IMPORTANT(C1X, diag::warn_pch_c1x);
+  PARSE_LANGOPT_IMPORTANT(Cayley, diag::warn_pch_cayley);
   PARSE_LANGOPT_IMPORTANT(Microsoft, diag::warn_pch_microsoft_extensions);
   PARSE_LANGOPT_BENIGN(MSCVersion);
   PARSE_LANGOPT_IMPORTANT(CPlusPlus, diag::warn_pch_cplusplus);
@@ -2924,6 +2925,7 @@ bool ASTReader::ParseLanguageOptions(
     PARSE_LANGOPT(HexFloats);
     PARSE_LANGOPT(C99);
     PARSE_LANGOPT(C1X);
+    PARSE_LANGOPT(Cayley);
     PARSE_LANGOPT(Microsoft);
     PARSE_LANGOPT(CPlusPlus);
     PARSE_LANGOPT(CPlusPlus0x);
@@ -3128,6 +3130,16 @@ QualType ASTReader::ReadTypeRecord(unsigned Index) {
     }
     QualType PointeeType = GetType(Record[0]);
     return Context->getPointerType(PointeeType);
+  }
+
+  case TYPE_SLICE: {
+    if (Record.size() != 2) {
+      Error("Incorrect encoding of slice type");
+      return QualType();
+    }
+    QualType PointeeType = GetType(Record[0]);
+    unsigned NumDims = Record[1];
+    return Context->getSliceType(PointeeType, NumDims);
   }
 
   case TYPE_BLOCK_POINTER: {
@@ -3541,6 +3553,9 @@ void TypeLocReader::VisitComplexTypeLoc(ComplexTypeLoc TL) {
 }
 void TypeLocReader::VisitPointerTypeLoc(PointerTypeLoc TL) {
   TL.setStarLoc(ReadSourceLocation(Record, Idx));
+}
+void TypeLocReader::VisitSliceTypeLoc(SliceTypeLoc TL) {
+  TL.setDollarLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitBlockPointerTypeLoc(BlockPointerTypeLoc TL) {
   TL.setCaretLoc(ReadSourceLocation(Record, Idx));

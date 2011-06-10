@@ -69,6 +69,9 @@ namespace types {
   /// isObjC - Is this an "ObjC" input (Obj-C and Obj-C++ sources and headers).
   bool isObjC(ID Id);
 
+  /// isCayley - Is this a "Cayley" input.
+  bool isCayley(ID Id);
+
   /// lookupTypeForExtension - Lookup the type to use for the file
   /// extension \arg Ext.
   ID lookupTypeForExtension(const char *Ext);

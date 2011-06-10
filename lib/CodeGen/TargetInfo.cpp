@@ -239,7 +239,7 @@ static const Type *isSingleElementStruct(QualType T, ASTContext &Context) {
 static bool is32Or64BitBasicType(QualType Ty, ASTContext &Context) {
   if (!Ty->getAs<BuiltinType>() && !Ty->hasPointerRepresentation() &&
       !Ty->isAnyComplexType() && !Ty->isEnumeralType() &&
-      !Ty->isBlockPointerType())
+      !Ty->isBlockPointerType() && !Ty->isSliceType())
     return false;
 
   uint64_t Size = Context.getTypeSize(Ty);
@@ -457,7 +457,7 @@ bool X86_32ABIInfo::shouldReturnTypeInRegister(QualType Ty,
   // If this is a builtin, pointer, enum, complex type, member pointer, or
   // member function pointer it is ok.
   if (Ty->getAs<BuiltinType>() || Ty->hasPointerRepresentation() ||
-      Ty->isAnyComplexType() || Ty->isEnumeralType() ||
+      Ty->isAnyComplexType() || Ty->isEnumeralType() || Ty->isSliceType() ||
       Ty->isBlockPointerType() || Ty->isMemberPointerType())
     return true;
 
@@ -2404,6 +2404,9 @@ static bool isIntegerLikeType(QualType Ty, ASTContext &Context,
   // Small complex integer types are "integer like".
   if (const ComplexType *CT = Ty->getAs<ComplexType>())
     return isIntegerLikeType(CT->getElementType(), Context, VMContext);
+
+  if (Ty->isSliceType())
+    return false;
 
   // Single element and zero sized arrays should be allowed, by the definition
   // above, but they are not.

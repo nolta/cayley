@@ -180,6 +180,10 @@ PUNCTUATOR(coloncolon,          "::")
 // Objective C support.
 PUNCTUATOR(at,                  "@")
 
+// Cayley support
+PUNCTUATOR(dollar,              "$")
+PUNCTUATOR(slashl_square,       "/[")
+
 // CUDA support.
 PUNCTUATOR(lesslessless,          "<<<")
 PUNCTUATOR(greatergreatergreater, ">>>")
@@ -201,6 +205,7 @@ PUNCTUATOR(greatergreatergreater, ">>>")
 //   KEYALTIVEC - This is a keyword in AltiVec
 //   KEYBORLAND - This is a keyword if Borland extensions are enabled
 //   BOOLSUPPORT - This is a keyword if 'bool' is a built-in type
+//   KEYCAYLEY  - This is a keyword in Cayley
 //
 KEYWORD(auto                        , KEYALL)
 KEYWORD(break                       , KEYALL)
@@ -243,9 +248,16 @@ KEYWORD(_Imaginary                  , KEYALL)
 KEYWORD(_Static_assert              , KEYALL)
 KEYWORD(__func__                    , KEYALL)
 
+// Cayley
+ALIAS("dbl", double                 , KEYCAYLEY)
+ALIAS("flt", float                  , KEYCAYLEY)
+KEYWORD(quad                        , KEYCAYLEY)
+KEYWORD(__slice_dim1                , KEYCAYLEY)
+KEYWORD(__slice_dim2                , KEYCAYLEY)
+
 // C++ 2.11p1: Keywords.
 KEYWORD(asm                         , KEYCXX|KEYGNU)
-KEYWORD(bool                        , BOOLSUPPORT|KEYALTIVEC)
+KEYWORD(bool                        , BOOLSUPPORT|KEYALTIVEC|KEYCAYLEY)
 KEYWORD(catch                       , KEYCXX)
 KEYWORD(class                       , KEYCXX)
 KEYWORD(const_cast                  , KEYCXX)

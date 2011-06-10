@@ -176,6 +176,7 @@ void Parser::ParseGNUAttributes(ParsedAttributes &attrs,
           case tok::kw_unsigned:
           case tok::kw_float:
           case tok::kw_double:
+          case tok::kw_quad:
           case tok::kw_void:
           case tok::kw_typeof: {
             AttributeList *attr
@@ -1783,6 +1784,10 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       isInvalid = DS.SetTypeSpecType(DeclSpec::TST_double, Loc, PrevSpec,
                                      DiagID);
       break;
+    case tok::kw_quad:
+      isInvalid = DS.SetTypeSpecType(DeclSpec::TST_quad, Loc, PrevSpec,
+                                     DiagID);
+      break;
     case tok::kw_wchar_t:
       isInvalid = DS.SetTypeSpecType(DeclSpec::TST_wchar, Loc, PrevSpec,
                                      DiagID);
@@ -2081,6 +2086,9 @@ bool Parser::ParseOptionalTypeSpecifier(DeclSpec &DS, bool& isInvalid,
     break;
   case tok::kw_double:
     isInvalid = DS.SetTypeSpecType(DeclSpec::TST_double, Loc, PrevSpec, DiagID);
+    break;
+  case tok::kw_quad:
+    isInvalid = DS.SetTypeSpecType(DeclSpec::TST_quad, Loc, PrevSpec, DiagID);
     break;
   case tok::kw_wchar_t:
     isInvalid = DS.SetTypeSpecType(DeclSpec::TST_wchar, Loc, PrevSpec, DiagID);
@@ -2788,6 +2796,7 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
   case tok::kw_int:
   case tok::kw_float:
   case tok::kw_double:
+  case tok::kw_quad:
   case tok::kw_bool:
   case tok::kw__Bool:
   case tok::kw__Decimal32:
@@ -2857,6 +2866,7 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw_int:
   case tok::kw_float:
   case tok::kw_double:
+  case tok::kw_quad:
   case tok::kw_bool:
   case tok::kw__Bool:
   case tok::kw__Decimal32:
@@ -2982,6 +2992,7 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw_int:
   case tok::kw_float:
   case tok::kw_double:
+  case tok::kw_quad:
   case tok::kw_bool:
   case tok::kw__Bool:
   case tok::kw__Decimal32:
@@ -3278,8 +3289,9 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
   }
 
   tok::TokenKind Kind = Tok.getKind();
-  // Not a pointer, C++ reference, or block.
+  // Not a pointer, C++ reference, block, or slice.
   if (Kind != tok::star && Kind != tok::caret &&
+      (Kind != tok::dollar || !getLang().Cayley) &&
       (Kind != tok::amp || !getLang().CPlusPlus) &&
       // We parse rvalue refs in C++03, because otherwise the errors are scary.
       (Kind != tok::ampamp || !getLang().CPlusPlus)) {
@@ -3289,8 +3301,8 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
   }
 
   // Otherwise, '*' -> pointer, '^' -> block, '&' -> lvalue reference,
-  // '&&' -> rvalue reference
-  SourceLocation Loc = ConsumeToken();  // Eat the *, ^, & or &&.
+  // '&&' -> rvalue reference, '$...' -> slice
+  SourceLocation Loc = ConsumeToken();  // Eat the *, ^, &, &&, or $.
   D.SetRangeEnd(Loc);
 
   if (Kind == tok::star || Kind == tok::caret) {
@@ -3316,6 +3328,32 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
                                                      Loc),
                     DS.getAttributes(),
                     SourceLocation());
+
+  } else if (Kind == tok::dollar) {
+    // Is a slice
+    DeclSpec DS(AttrFactory);
+
+    // Consume all $
+    unsigned NumDims = 1;
+    while (Tok.getKind() == tok::dollar) {
+        ConsumeToken();
+        NumDims++;
+    }
+
+    ParseTypeQualifierListOpt(DS);
+    D.ExtendWithDeclSpec(DS);
+
+    // Recursively parse the declarator.
+    ParseDeclaratorInternal(D, DirectDeclParser);
+
+    // Remember that we parsed a slice type, and remember the type-quals.
+    D.AddTypeInfo(DeclaratorChunk::getSlice(NumDims,
+                                            DS.getTypeQualifiers(), Loc,
+                                            DS.getConstSpecLoc(),
+                                            DS.getVolatileSpecLoc(),
+                                            DS.getRestrictSpecLoc()),
+                  DS.getAttributes(),
+                  SourceLocation());
   } else {
     // Is a reference
     DeclSpec DS(AttrFactory);
@@ -4252,6 +4290,7 @@ bool Parser::TryAltiVecVectorTokenOutOfLine() {
   case tok::kw_int:
   case tok::kw_float:
   case tok::kw_double:
+  case tok::kw_quad:
   case tok::kw_bool:
   case tok::kw___pixel:
     Tok.setKind(tok::kw___vector);
@@ -4280,6 +4319,7 @@ bool Parser::TryAltiVecTokenOutOfLine(DeclSpec &DS, SourceLocation Loc,
     case tok::kw_int:
     case tok::kw_float:
     case tok::kw_double:
+    case tok::kw_quad:
     case tok::kw_bool:
     case tok::kw___pixel:
       isInvalid = DS.SetTypeAltiVecVector(true, Loc, PrevSpec, DiagID);

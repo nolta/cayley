@@ -87,6 +87,7 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   mutable llvm::FoldingSet<ExtQuals> ExtQualNodes;
   mutable llvm::FoldingSet<ComplexType> ComplexTypes;
   mutable llvm::FoldingSet<PointerType> PointerTypes;
+  mutable llvm::FoldingSet<SliceType> SliceTypes;
   mutable llvm::FoldingSet<BlockPointerType> BlockPointerTypes;
   mutable llvm::FoldingSet<LValueReferenceType> LValueReferenceTypes;
   mutable llvm::FoldingSet<RValueReferenceType> RValueReferenceTypes;
@@ -556,6 +557,10 @@ public:
   CanQualType getPointerType(CanQualType T) const {
     return CanQualType::CreateUnsafe(getPointerType((QualType) T));
   }
+
+  /// getSliceType - Return the uniqued reference to the type for a slice
+  /// of the specified type.
+  QualType getSliceType(QualType T, unsigned NumDims) const;
 
   /// getBlockPointerType - Return the uniqued reference to the type for a block
   /// of the specified type.

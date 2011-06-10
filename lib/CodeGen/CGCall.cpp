@@ -1085,6 +1085,9 @@ void CodeGenFunction::EmitFunctionEpilog(const CGFunctionInfo &FI) {
     if (RetTy->isAnyComplexType()) {
       ComplexPairTy RT = LoadComplexFromAddr(ReturnValue, false);
       StoreComplexToAddr(RT, CurFn->arg_begin(), false);
+    } else if (RetTy->isSliceType()) {
+      SlicePairTy RT = LoadSliceFromAddr(ReturnValue, false);
+      StoreSliceToAddr(RT, CurFn->arg_begin(), false);
     } else if (CodeGenFunction::hasAggregateLLVMType(RetTy)) {
       // Do nothing; aggregrates get evaluated directly into the destination.
     } else {
@@ -1175,6 +1178,11 @@ void CodeGenFunction::EmitDelegateCallArg(CallArgList &args,
     return args.add(RValue::getComplex(complex), type);
   }
 
+  if (type->isSliceType()) {
+    SlicePairTy slice = LoadSliceFromAddr(local, /*volatile*/ false);
+    return args.add(RValue::getSlice(slice), type);
+  }
+
   if (hasAggregateLLVMType(type))
     return args.add(RValue::getAggregate(local), type);
 
@@ -1255,12 +1263,14 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       getContext().getTypeAlignInChars(I->Ty).getQuantity();
     switch (ArgInfo.getKind()) {
     case ABIArgInfo::Indirect: {
-      if (RV.isScalar() || RV.isComplex()) {
+      if (RV.isScalar() || RV.isComplex() || RV.isSlice()) {
         // Make a temporary alloca to pass the argument.
         Args.push_back(CreateMemTemp(I->Ty));
         if (RV.isScalar())
           EmitStoreOfScalar(RV.getScalarVal(), Args.back(), false,
                             Alignment, I->Ty);
+        else if (RV.isSlice())
+          StoreSliceToAddr(RV.getSliceVal(), Args.back(), false);
         else
           StoreComplexToAddr(RV.getComplexVal(), Args.back(), false);
       } else if (I->NeedsCopy && !ArgInfo.getIndirectByVal()) {
@@ -1296,6 +1306,9 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       } else if (RV.isComplex()) {
         SrcPtr = CreateMemTemp(I->Ty, "coerce");
         StoreComplexToAddr(RV.getComplexVal(), SrcPtr, false);
+      } else if (RV.isSlice()) {
+        SrcPtr = CreateMemTemp(I->Ty, "coerce");
+        StoreSliceToAddr(RV.getSliceVal(), SrcPtr, false);
       } else
         SrcPtr = RV.getAggregateAddr();
 
@@ -1418,6 +1431,8 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
     unsigned Alignment = getContext().getTypeAlignInChars(RetTy).getQuantity();
     if (RetTy->isAnyComplexType())
       return RValue::getComplex(LoadComplexFromAddr(Args[0], false));
+    if (RetTy->isSliceType())
+      return RValue::getSlice(LoadSliceFromAddr(Args[0], false));
     if (CodeGenFunction::hasAggregateLLVMType(RetTy))
       return RValue::getAggregate(Args[0]);
     return RValue::get(EmitLoadOfScalar(Args[0], false, Alignment, RetTy));
@@ -1436,6 +1451,11 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         llvm::Value *Real = Builder.CreateExtractValue(CI, 0);
         llvm::Value *Imag = Builder.CreateExtractValue(CI, 1);
         return RValue::getComplex(std::make_pair(Real, Imag));
+      }
+      if (RetTy->isSliceType()) {
+        llvm::Value *A = Builder.CreateExtractValue(CI, 0);
+        llvm::Value *B = Builder.CreateExtractValue(CI, 1);
+        return RValue::getSlice(std::make_pair(A, B));
       }
       if (CodeGenFunction::hasAggregateLLVMType(RetTy)) {
         llvm::Value *DestPtr = ReturnValue.getValue();
@@ -1472,6 +1492,8 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
     unsigned Alignment = getContext().getTypeAlignInChars(RetTy).getQuantity();
     if (RetTy->isAnyComplexType())
       return RValue::getComplex(LoadComplexFromAddr(DestPtr, false));
+    if (RetTy->isSliceType())
+      return RValue::getSlice(LoadSliceFromAddr(DestPtr, false));
     if (CodeGenFunction::hasAggregateLLVMType(RetTy))
       return RValue::getAggregate(DestPtr);
     return RValue::get(EmitLoadOfScalar(DestPtr, false, Alignment, RetTy));

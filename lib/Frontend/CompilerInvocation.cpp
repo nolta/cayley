@@ -330,12 +330,14 @@ static const char *getInputKindName(InputKind Kind) {
   case IK_LLVM_IR:           return "ir";
   case IK_ObjC:              return "objective-c";
   case IK_ObjCXX:            return "objective-c++";
+  case IK_Cayley:            return "cayley";
   case IK_OpenCL:            return "cl";
   case IK_CUDA:              return "cuda";
   case IK_PreprocessedC:     return "cpp-output";
   case IK_PreprocessedCXX:   return "c++-cpp-output";
   case IK_PreprocessedObjC:  return "objective-c-cpp-output";
   case IK_PreprocessedObjCXX:return "objective-c++-cpp-output";
+  case IK_PreprocessedCayley:return "cayley-cpp-output";
   }
 
   llvm_unreachable("Unexpected language kind!");
@@ -1226,16 +1228,19 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       .Case("c++", IK_CXX)
       .Case("objective-c", IK_ObjC)
       .Case("objective-c++", IK_ObjCXX)
+      .Case("cayley", IK_Cayley)
       .Case("cpp-output", IK_PreprocessedC)
       .Case("assembler-with-cpp", IK_Asm)
       .Case("c++-cpp-output", IK_PreprocessedCXX)
       .Case("objective-c-cpp-output", IK_PreprocessedObjC)
       .Case("objc-cpp-output", IK_PreprocessedObjC)
       .Case("objective-c++-cpp-output", IK_PreprocessedObjCXX)
+      .Case("cayley-cpp-output", IK_PreprocessedCayley)
       .Case("c-header", IK_C)
       .Case("objective-c-header", IK_ObjC)
       .Case("c++-header", IK_CXX)
       .Case("objective-c++-header", IK_ObjCXX)
+      .Case("cayley-header", IK_Cayley)
       .Case("ast", IK_AST)
       .Case("ir", IK_LLVM_IR)
       .Default(IK_None);
@@ -1340,6 +1345,9 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
              IK == IK_PreprocessedObjC ||
              IK == IK_PreprocessedObjCXX) {
     Opts.ObjC1 = Opts.ObjC2 = 1;
+  } else if (IK == IK_Cayley ||
+             IK == IK_PreprocessedCayley) {
+    Opts.Cayley = 1;
   }
 
   if (LangStd == LangStandard::lang_unspecified) {
@@ -1360,6 +1368,8 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
     case IK_PreprocessedC:
     case IK_ObjC:
     case IK_PreprocessedObjC:
+    case IK_Cayley:
+    case IK_PreprocessedCayley:
       LangStd = LangStandard::lang_gnu99;
       break;
     case IK_CXX:
@@ -1396,7 +1406,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
     Opts.CUDA = 1;
 
   // OpenCL and C++ both have bool, true, false keywords.
-  Opts.Bool = Opts.OpenCL || Opts.CPlusPlus;
+  Opts.Bool = Opts.OpenCL || Opts.CPlusPlus || Opts.Cayley;
 
   Opts.GNUKeywords = Opts.GNUMode;
   Opts.CXXOperatorNames = Opts.CPlusPlus;
@@ -1405,7 +1415,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
   // is specified, or -std is set to a conforming mode.
   Opts.Trigraphs = !Opts.GNUMode;
 
-  Opts.DollarIdents = !Opts.AsmPreprocessor;
+  Opts.DollarIdents = !Opts.AsmPreprocessor || !Opts.Cayley;
 }
 
 static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
@@ -1450,6 +1460,12 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
         if (!Std.isCPlusPlus())
           Diags.Report(diag::err_drv_argument_not_allowed_with)
             << A->getAsString(Args) << "CUDA";
+        break;
+      case IK_Cayley:
+      case IK_PreprocessedCayley:
+        if (!Std.isC99())
+          Diags.Report(diag::err_drv_argument_not_allowed_with)
+            << A->getAsString(Args) << "Cayley";
         break;
       default:
         break;

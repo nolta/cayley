@@ -3492,6 +3492,10 @@ Sema::CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
     BaseExpr = RHSExp;
     IndexExpr = LHSExp;
     ResultType = RHSTy->getAs<PointerType>()->getPointeeType();
+  } else if (const SliceType *STy = LHSTy->getAs<SliceType>()) {
+    BaseExpr = LHSExp;
+    IndexExpr = RHSExp;
+    ResultType = STy->getPointeeType();
   } else {
     return ExprError(Diag(LLoc, diag::err_typecheck_subscript_value)
        << LHSExp->getSourceRange() << RHSExp->getSourceRange());
@@ -3542,6 +3546,196 @@ Sema::CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
 
   return Owned(new (Context) ArraySubscriptExpr(LHSExp, RHSExp,
                                                 ResultType, VK, OK, RLoc));
+}
+
+ExprResult
+Sema::ActOnArraySubscriptsExpr(Scope *S, Expr *Base, SourceLocation LLoc,
+                               MultiExprArg args, SourceLocation RLoc) {
+  unsigned NumArgs = args.size();
+
+  // Since this might be a postfix expression, get rid of ParenListExprs.
+  ExprResult Result = MaybeConvertParenListExprToParenExpr(S, Base);
+  if (Result.isInvalid()) return ExprError();
+  Base = Result.take();
+
+  Expr **Args = args.release();
+
+  Expr *LHSExp = Base;
+  Result = DefaultFunctionArrayLvalueConversion(LHSExp);
+  if (Result.isInvalid())
+    return ExprError();
+  LHSExp = Result.take();
+
+  if (!LHSExp->getType()->isSliceType())
+    // FIXME
+    return ExprError(Diag(LLoc, diag::err_typecheck_subscript_value)
+       << LHSExp->getSourceRange()); // << RHSExp->getSourceRange());
+
+  const SliceType *STy = LHSExp->getType()->getAs<SliceType>();
+
+  //QualType LHSTy = LHSExp->getType(), RHSTy = RHSExp->getType();
+  Expr *BaseExpr, *IndexExpr;
+  BaseExpr = LHSExp;
+  ExprValueKind VK = VK_LValue;
+  ExprObjectKind OK = OK_Ordinary;
+  bool dependent = STy->isDependentType();
+
+  for (unsigned i = 0; i != NumArgs; ++i)
+  {
+    Expr *RHSExp = Args[i];
+    Result = DefaultFunctionArrayLvalueConversion(RHSExp);
+    if (Result.isInvalid())
+      return ExprError();
+    RHSExp = Result.take();
+    Args[i] = RHSExp;
+
+    dependent = dependent || RHSExp->getType()->isDependentType();
+
+    // C99 6.5.2.1p1
+    IndexExpr = RHSExp;
+    if (!IndexExpr->getType()->isIntegerType() && !IndexExpr->isTypeDependent())
+      return ExprError(Diag(LLoc, diag::err_typecheck_subscript_not_integer)
+                       << IndexExpr->getSourceRange());
+  
+    if ((IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_S) ||
+         IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_U))
+           && !IndexExpr->isTypeDependent())
+      Diag(LLoc, diag::warn_subscript_is_char) << IndexExpr->getSourceRange();
+  }
+
+  QualType ResultType = (dependent ? Context.DependentTy : STy->getPointeeType());
+
+  // C99 6.5.2.1p1: "shall have type "pointer to *object* type". Similarly,
+  // C++ [expr.sub]p1: The type "T" shall be a completely-defined object
+  // type. Note that Functions are not objects, and that (in C99 parlance)
+  // incomplete types are not object types.
+  if (ResultType->isFunctionType()) {
+    Diag(BaseExpr->getLocStart(), diag::err_subscript_function_type)
+      << ResultType << BaseExpr->getSourceRange();
+    return ExprError();
+  }
+
+  if (ResultType->isVoidType() && !getLangOptions().CPlusPlus) {
+    // GNU extension: subscripting on pointer to void
+    Diag(LLoc, diag::ext_gnu_void_ptr)
+      << BaseExpr->getSourceRange();
+
+    // C forbids expressions of unqualified void type from being l-values.
+    // See IsCForbiddenLValueType.
+    if (!ResultType.hasQualifiers()) VK = VK_RValue;
+  } else if (!ResultType->isDependentType() &&
+      RequireCompleteType(LLoc, ResultType,
+                          PDiag(diag::err_subscript_incomplete_type)
+                            << BaseExpr->getSourceRange()))
+    return ExprError();
+
+  // Diagnose bad cases where we step over interface counts.
+  if (ResultType->isObjCObjectType() && LangOpts.ObjCNonFragileABI) {
+    Diag(LLoc, diag::err_subscript_nonfragile_interface)
+      << ResultType << BaseExpr->getSourceRange();
+    return ExprError();
+  }
+
+  assert(VK == VK_RValue || LangOpts.CPlusPlus ||
+         !IsCForbiddenLValueType(Context, ResultType));
+
+  return Owned(new (Context) ArraySubscriptsExpr(Context, LHSExp, Args, NumArgs,
+                                                 ResultType, VK, OK, RLoc));
+}
+
+ExprResult
+Sema::ActOnSliceExpr(Scope *S, Expr *Base, SourceLocation LLoc,
+                     MultiExprArg args, SourceLocation RLoc) {
+  unsigned NumArgs = args.size();
+
+  // Since this might be a postfix expression, get rid of ParenListExprs.
+  ExprResult Result = MaybeConvertParenListExprToParenExpr(S, Base);
+  if (Result.isInvalid()) return ExprError();
+  Base = Result.take();
+
+  Expr **Args = args.release();
+
+  Expr *LHSExp = Base;
+  Result = DefaultFunctionArrayLvalueConversion(LHSExp);
+  if (Result.isInvalid())
+    return ExprError();
+  LHSExp = Result.take();
+
+  if (!LHSExp->getType()->isPointerType())
+    // FIXME
+    return ExprError(Diag(LLoc, diag::err_typecheck_subscript_value)
+       << LHSExp->getSourceRange()); // << RHSExp->getSourceRange());
+
+  const PointerType *PTy = LHSExp->getType()->getAs<PointerType>();
+
+  Expr *BaseExpr, *IndexExpr;
+  BaseExpr = LHSExp;
+  ExprValueKind VK = VK_RValue;
+  ExprObjectKind OK = OK_Ordinary;
+  bool dependent = PTy->isDependentType();
+
+  for (unsigned i = 0; i != NumArgs; ++i)
+  {
+    Expr *RHSExp = Args[i];
+    Result = DefaultFunctionArrayLvalueConversion(RHSExp);
+    if (Result.isInvalid())
+      return ExprError();
+    RHSExp = Result.take();
+    Args[i] = RHSExp;
+
+    dependent = dependent || RHSExp->getType()->isDependentType();
+
+    // C99 6.5.2.1p1
+    IndexExpr = RHSExp;
+    if (!IndexExpr->getType()->isIntegerType() && !IndexExpr->isTypeDependent())
+      return ExprError(Diag(LLoc, diag::err_typecheck_subscript_not_integer)
+                       << IndexExpr->getSourceRange());
+  
+    if ((IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_S) ||
+         IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_U))
+           && !IndexExpr->isTypeDependent())
+      Diag(LLoc, diag::warn_subscript_is_char) << IndexExpr->getSourceRange();
+  }
+
+  QualType ResultType = (dependent ? Context.DependentTy :
+                         Context.getSliceType(PTy->getPointeeType(), NumArgs));
+
+  // C99 6.5.2.1p1: "shall have type "pointer to *object* type". Similarly,
+  // C++ [expr.sub]p1: The type "T" shall be a completely-defined object
+  // type. Note that Functions are not objects, and that (in C99 parlance)
+  // incomplete types are not object types.
+  if (ResultType->isFunctionType()) {
+    Diag(BaseExpr->getLocStart(), diag::err_subscript_function_type)
+      << ResultType << BaseExpr->getSourceRange();
+    return ExprError();
+  }
+
+  if (ResultType->isVoidType() && !getLangOptions().CPlusPlus) {
+    // GNU extension: subscripting on pointer to void
+    Diag(LLoc, diag::ext_gnu_void_ptr)
+      << BaseExpr->getSourceRange();
+
+    // C forbids expressions of unqualified void type from being l-values.
+    // See IsCForbiddenLValueType.
+    if (!ResultType.hasQualifiers()) VK = VK_RValue;
+  } else if (!ResultType->isDependentType() &&
+      RequireCompleteType(LLoc, ResultType,
+                          PDiag(diag::err_subscript_incomplete_type)
+                            << BaseExpr->getSourceRange()))
+    return ExprError();
+
+  // Diagnose bad cases where we step over interface counts.
+  if (ResultType->isObjCObjectType() && LangOpts.ObjCNonFragileABI) {
+    Diag(LLoc, diag::err_subscript_nonfragile_interface)
+      << ResultType << BaseExpr->getSourceRange();
+    return ExprError();
+  }
+
+  assert(VK == VK_RValue || LangOpts.CPlusPlus ||
+         !IsCForbiddenLValueType(Context, ResultType));
+
+  return Owned(new (Context) SliceExpr(Context, LHSExp, Args, NumArgs,
+                                       ResultType, VK, OK, RLoc));
 }
 
 /// Check an ext-vector component access expression.
@@ -5295,11 +5489,41 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
       return CK_PointerToBoolean;
     case Type::STK_Integral:
       return CK_PointerToIntegral;
+    case Type::STK_Slice:
+      /*
+      Src = S.ImpCastExprToType(Src.take(),
+                                DestTy->getAs<SliceType>()->getPointeeType(),
+                                CK_BitCast);
+                                */
+      return CK_PointerToSlice;
     case Type::STK_Floating:
     case Type::STK_FloatingComplex:
     case Type::STK_IntegralComplex:
     case Type::STK_MemberPointer:
       llvm_unreachable("illegal cast from pointer");
+    }
+    break;
+
+  case Type::STK_Slice:
+    switch (DestTy->getScalarTypeKind()) {
+    case Type::STK_Slice:
+      return CK_SliceCast;
+    case Type::STK_Pointer: {
+      QualType ET = SrcTy->getAs<SliceType>()->getPointeeType();
+      if (S.Context.hasSameType(ET, DestTy))
+        return CK_SliceToPointer;
+      Src = S.ImpCastExprToType(Src.take(), ET, CK_SliceToPointer);
+      return CK_BitCast;
+    }
+    case Type::STK_Bool:
+      return CK_SliceToBoolean;
+    case Type::STK_Integral:
+      return CK_SliceToIntegral;
+    case Type::STK_Floating:
+    case Type::STK_FloatingComplex:
+    case Type::STK_IntegralComplex:
+    case Type::STK_MemberPointer:
+      llvm_unreachable("illegal cast from slice");
     }
     break;
 
@@ -5310,6 +5534,10 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
       if (Src.get()->isNullPointerConstant(S.Context, Expr::NPC_ValueDependentIsNull))
         return CK_NullToPointer;
       return CK_IntegralToPointer;
+    case Type::STK_Slice:
+      if (Src.get()->isNullPointerConstant(S.Context, Expr::NPC_ValueDependentIsNull))
+        return CK_NullToSlice;
+      return CK_IntegralToSlice;
     case Type::STK_Bool:
       return CK_IntegralToBoolean;
     case Type::STK_Integral:
@@ -5346,6 +5574,7 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
                                 CK_FloatingToIntegral);
       return CK_IntegralRealToComplex;
     case Type::STK_Pointer:
+    case Type::STK_Slice:
       llvm_unreachable("valid float->pointer cast?");
     case Type::STK_MemberPointer:
       llvm_unreachable("member pointer type in C");
@@ -5372,6 +5601,7 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
                                 CK_FloatingComplexToReal);
       return CK_FloatingToIntegral;
     case Type::STK_Pointer:
+    case Type::STK_Slice:
       llvm_unreachable("valid complex float->pointer cast?");
     case Type::STK_MemberPointer:
       llvm_unreachable("member pointer type in C");
@@ -5398,6 +5628,7 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
                                 CK_IntegralComplexToReal);
       return CK_IntegralToFloating;
     case Type::STK_Pointer:
+    case Type::STK_Slice:
       llvm_unreachable("valid complex int->pointer cast?");
     case Type::STK_MemberPointer:
       llvm_unreachable("member pointer type in C");
@@ -6804,6 +7035,12 @@ Sema::CheckAssignmentConstraints(QualType lhsType, ExprResult &rhs,
       return PointerToInt;
     }
 
+    // T* -> U$
+    if (lhsType->isSliceType()) {
+      Kind = CK_PointerToSlice;
+      return Compatible;
+    }
+
     return Incompatible;
   }
 
@@ -6830,6 +7067,17 @@ Sema::CheckAssignmentConstraints(QualType lhsType, ExprResult &rhs,
       Kind = CK_NoOp;
       return Compatible;
     }
+  }
+
+  // Conversions to slices
+  if (isa<SliceType>(lhsType)) {
+    // U$ -> T$
+    if (rhsType->isSliceType()) {
+      Kind = CK_SliceCast;
+      return Compatible;
+    }
+
+    return Incompatible;
   }
 
   return Incompatible;
@@ -8719,6 +8967,8 @@ static inline UnaryOperatorKind ConvertTokenKindToUnaryOpcode(
   case tok::kw___real:    Opc = UO_Real; break;
   case tok::kw___imag:    Opc = UO_Imag; break;
   case tok::kw___extension__: Opc = UO_Extension; break;
+  case tok::kw___slice_dim1:  Opc = UO_SliceDim1; break;
+  case tok::kw___slice_dim2:  Opc = UO_SliceDim2; break;
   }
   return Opc;
 }
@@ -9202,6 +9452,10 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
     resultType = Input.get()->getType();
     VK = Input.get()->getValueKind();
     OK = Input.get()->getObjectKind();
+    break;
+  case UO_SliceDim1:
+  case UO_SliceDim2:
+    resultType = Context.IntTy;
     break;
   }
   if (resultType.isNull() || Input.isInvalid())

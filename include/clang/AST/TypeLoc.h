@@ -933,6 +933,19 @@ public:
 };
 
 
+/// \brief Wrapper for source info for slices.
+class SliceTypeLoc : public PointerLikeTypeLoc<SliceTypeLoc,
+                                               SliceType> {
+public:
+  SourceLocation getDollarLoc() const {
+    return getSigilLoc();
+  }
+  void setDollarLoc(SourceLocation Loc) {
+    setSigilLoc(Loc);
+  }
+};
+
+
 /// \brief Wrapper for source info for block pointers.
 class BlockPointerTypeLoc : public PointerLikeTypeLoc<BlockPointerTypeLoc,
                                                       BlockPointerType> {

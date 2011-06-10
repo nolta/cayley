@@ -118,6 +118,9 @@ def warn_pch_c99 : Error<
 def warn_pch_c1x : Error<
     "C1X support was %select{disabled|enabled}0 in PCH file but is "
     "currently %select{disabled|enabled}1">;
+def warn_pch_cayley : Error<
+    "Cayley support was %select{disabled|enabled}0 in PCH file but is "
+    "currently %select{disabled|enabled}1">;
 def warn_pch_cplusplus : Error<
     "C++ support was %select{disabled|enabled}0 in PCH file but is "
     "currently %select{disabled|enabled}1">;

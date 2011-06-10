@@ -1794,6 +1794,207 @@ public:
 };
 
 
+/// ArraySubscriptsExpr - [Cayley] Arrays with multiple subscripts.
+class ArraySubscriptsExpr : public Expr {
+  enum { LHS=0, ARGS_START=1 };
+  unsigned NumArgs;
+  Stmt **SubExprs;
+  SourceLocation RBracketLoc;
+
+public:
+  ArraySubscriptsExpr(ASTContext& C, Expr *lhs, Expr **args, unsigned NumArgs,
+                      QualType t, ExprValueKind VK, ExprObjectKind OK,
+                      SourceLocation rbracketloc);
+
+  /// \brief Create an empty array subscript expression.
+  explicit ArraySubscriptsExpr(EmptyShell Shell)
+    : Expr(ArraySubscriptsExprClass, Shell) { }
+
+  /// An array access can be written A[4] or 4[A] (both are equivalent).
+  /// - getBase() and getIdx() always present the normalized view: A[4].
+  ///    In this case getBase() returns "A" and getIdx() returns "4".
+  /// - getLHS() and getRHS() present the syntactic view. e.g. for
+  ///    4[A] getLHS() returns "4".
+  /// Note: Because vector element access is also written A[4] we must
+  /// predicate the format conversion in getBase and getIdx only on the
+  /// the type of the RHS, as it is possible for the LHS to be a vector of
+  /// integer type
+  Expr *getLHS() { return cast<Expr>(SubExprs[LHS]); }
+  const Expr *getLHS() const { return cast<Expr>(SubExprs[LHS]); }
+  void setLHS(Expr *E) { SubExprs[LHS] = E; }
+
+  Expr *getBase() {
+    return cast<Expr>(getLHS());
+  }
+
+  const Expr *getBase() const {
+    return cast<Expr>(getLHS());
+  }
+
+  /// getNumArgs - Return the number of actual arguments to this call.
+  ///
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// \brief Retrieve the call arguments.
+  Expr **getArgs() {
+    return reinterpret_cast<Expr **>(SubExprs+ARGS_START);
+  }
+  
+  /// getArg - Return the specified argument.
+  Expr *getArg(unsigned Arg) {
+    assert(Arg < NumArgs && "Arg access out of range!");
+    return cast<Expr>(SubExprs[Arg+ARGS_START]);
+  }
+  const Expr *getArg(unsigned Arg) const {
+    assert(Arg < NumArgs && "Arg access out of range!");
+    return cast<Expr>(SubExprs[Arg+ARGS_START]);
+  }
+
+  /// setArg - Set the specified argument.
+  void setArg(unsigned Arg, Expr *ArgExpr) {
+    assert(Arg < NumArgs && "Arg access out of range!");
+    SubExprs[Arg+ARGS_START] = ArgExpr;
+  }
+
+  /// setNumArgs - This changes the number of arguments present in this call.
+  /// Any orphaned expressions are deleted by this, and any new operands are set
+  /// to null.
+  void setNumArgs(ASTContext& C, unsigned NumArgs);
+
+  typedef ExprIterator arg_iterator;
+  typedef ConstExprIterator const_arg_iterator;
+
+  arg_iterator arg_begin() { return SubExprs+ARGS_START; }
+  arg_iterator arg_end() {
+    return SubExprs+ARGS_START+getNumArgs();
+  }
+  const_arg_iterator arg_begin() const {
+    return SubExprs+ARGS_START;
+  }
+  const_arg_iterator arg_end() const {
+    return SubExprs+ARGS_START+getNumArgs();
+  }
+
+  /// getNumCommas - Return the number of commas that must have been present in
+  /// this function call.
+  unsigned getNumCommas() const { return NumArgs ? NumArgs - 1 : 0; }
+
+  SourceRange getSourceRange() const {
+    return SourceRange(getLHS()->getLocStart(), RBracketLoc);
+  }
+
+  SourceLocation getRBracketLoc() const { return RBracketLoc; }
+  void setRBracketLoc(SourceLocation L) { RBracketLoc = L; }
+
+  SourceLocation getExprLoc() const { return getBase()->getExprLoc(); }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == ArraySubscriptsExprClass;
+  }
+  static bool classof(const ArraySubscriptsExpr *) { return true; }
+
+  // Iterators
+  child_range children() {
+    return child_range(&SubExprs[0], &SubExprs[0]+NumArgs+ARGS_START);
+  }
+};
+
+/// SliceExpr - [Cayley] Arrays with multiple subscripts.
+class SliceExpr : public Expr {
+  enum { LHS=0, ARGS_START=1 };
+  unsigned NumArgs;
+  Stmt **SubExprs;
+  SourceLocation RBracketLoc;
+
+public:
+  SliceExpr(ASTContext& C, Expr *lhs, Expr **args, unsigned NumArgs,
+                      QualType t, ExprValueKind VK, ExprObjectKind OK,
+                      SourceLocation rbracketloc);
+
+  /// \brief Create an empty array subscript expression.
+  explicit SliceExpr(EmptyShell Shell)
+    : Expr(SliceExprClass, Shell) { }
+
+  Expr *getLHS() { return cast<Expr>(SubExprs[LHS]); }
+  const Expr *getLHS() const { return cast<Expr>(SubExprs[LHS]); }
+  void setLHS(Expr *E) { SubExprs[LHS] = E; }
+
+  Expr *getBase() {
+    return cast<Expr>(getLHS());
+  }
+
+  const Expr *getBase() const {
+    return cast<Expr>(getLHS());
+  }
+
+  /// getNumArgs - Return the number of actual arguments to this call.
+  ///
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// \brief Retrieve the call arguments.
+  Expr **getArgs() {
+    return reinterpret_cast<Expr **>(SubExprs+ARGS_START);
+  }
+  
+  /// getArg - Return the specified argument.
+  Expr *getArg(unsigned Arg) {
+    assert(Arg < NumArgs && "Arg access out of range!");
+    return cast<Expr>(SubExprs[Arg+ARGS_START]);
+  }
+  const Expr *getArg(unsigned Arg) const {
+    assert(Arg < NumArgs && "Arg access out of range!");
+    return cast<Expr>(SubExprs[Arg+ARGS_START]);
+  }
+
+  /// setArg - Set the specified argument.
+  void setArg(unsigned Arg, Expr *ArgExpr) {
+    assert(Arg < NumArgs && "Arg access out of range!");
+    SubExprs[Arg+ARGS_START] = ArgExpr;
+  }
+
+  /// setNumArgs - This changes the number of arguments present in this call.
+  /// Any orphaned expressions are deleted by this, and any new operands are set
+  /// to null.
+  void setNumArgs(ASTContext& C, unsigned NumArgs);
+
+  typedef ExprIterator arg_iterator;
+  typedef ConstExprIterator const_arg_iterator;
+
+  arg_iterator arg_begin() { return SubExprs+ARGS_START; }
+  arg_iterator arg_end() {
+    return SubExprs+ARGS_START+getNumArgs();
+  }
+  const_arg_iterator arg_begin() const {
+    return SubExprs+ARGS_START;
+  }
+  const_arg_iterator arg_end() const {
+    return SubExprs+ARGS_START+getNumArgs();
+  }
+
+  /// getNumCommas - Return the number of commas that must have been present in
+  /// this function call.
+  unsigned getNumCommas() const { return NumArgs ? NumArgs - 1 : 0; }
+
+  SourceRange getSourceRange() const {
+    return SourceRange(getLHS()->getLocStart(), RBracketLoc);
+  }
+
+  SourceLocation getRBracketLoc() const { return RBracketLoc; }
+  void setRBracketLoc(SourceLocation L) { RBracketLoc = L; }
+
+  SourceLocation getExprLoc() const { return getBase()->getExprLoc(); }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == SliceExprClass;
+  }
+  static bool classof(const SliceExpr *) { return true; }
+
+  // Iterators
+  child_range children() {
+    return child_range(&SubExprs[0], &SubExprs[0]+NumArgs+ARGS_START);
+  }
+};
+
 /// CallExpr - Represents a function call (C99 6.5.2.2, C++ [expr.call]).
 /// CallExpr itself represents a normal function call, e.g., "f(x, 2)",
 /// while its subclasses may represent alternative syntax that (semantically)
@@ -2256,15 +2457,21 @@ private:
     case CK_FunctionToPointerDecay:
     case CK_NullToMemberPointer:
     case CK_NullToPointer:
+    case CK_NullToSlice:
     case CK_ConstructorConversion:
     case CK_IntegralToPointer:
+    case CK_IntegralToSlice:
     case CK_PointerToIntegral:
+    case CK_SliceToIntegral:
     case CK_ToVoid:
     case CK_VectorSplat:
     case CK_IntegralCast:
     case CK_IntegralToFloating:
     case CK_FloatingToIntegral:
     case CK_FloatingCast:
+    case CK_SliceToPointer:
+    case CK_PointerToSlice:
+    case CK_SliceCast:
     case CK_AnyPointerToObjCPointerCast:
     case CK_AnyPointerToBlockPointerCast:
     case CK_ObjCObjectLValueCast:
@@ -2284,6 +2491,7 @@ private:
     case CK_GetObjCProperty:
     case CK_NoOp:
     case CK_PointerToBoolean:
+    case CK_SliceToBoolean:
     case CK_IntegralToBoolean:
     case CK_FloatingToBoolean:
     case CK_MemberPointerToBoolean:

@@ -245,7 +245,15 @@ enum CastKind {
 
   /// \brief Converts from an integral complex to a floating complex.
   ///   _Complex unsigned -> _Complex float
-  CK_IntegralComplexToFloatingComplex
+  CK_IntegralComplexToFloatingComplex,
+
+  CK_IntegralToSlice,
+  CK_NullToSlice,
+  CK_PointerToSlice,
+  CK_SliceCast,
+  CK_SliceToBoolean,
+  CK_SliceToIntegral,
+  CK_SliceToPointer
 };
 
 #define CK_Invalid ((CastKind) -1)
@@ -281,6 +289,8 @@ enum UnaryOperatorKind {
   UO_Plus, UO_Minus,      // [C99 6.5.3.3] Unary arithmetic
   UO_Not, UO_LNot,        // [C99 6.5.3.3] Unary arithmetic
   UO_Real, UO_Imag,       // "__real expr"/"__imag expr" Extension.
+  UO_SliceDim1,           // [Cayley] Slice dimension
+  UO_SliceDim2,           // [Cayley] Slice dimension
   UO_Extension            // __extension__ marker.
 };
 

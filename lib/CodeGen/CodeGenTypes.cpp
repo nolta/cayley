@@ -313,7 +313,24 @@ const llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
     unsigned AS = Context.getTargetAddressSpace(ETy);
     return llvm::PointerType::get(PointeeType, AS);
   }
-
+  case Type::Slice: {
+    const SliceType &STy = cast<SliceType>(Ty);
+    QualType ETy = STy.getPointeeType();
+    llvm::OpaqueType *PointeeType = llvm::OpaqueType::get(getLLVMContext());
+    PointersToResolve.push_back(std::make_pair(ETy, PointeeType));
+    unsigned AS = Context.getTargetAddressSpace(ETy);
+    const llvm::Type *p = llvm::PointerType::get(PointeeType, AS);
+    const llvm::Type *i32 = llvm::IntegerType::get(getLLVMContext(), 32); // FIXME
+    /*
+    llvm::SmallVector<const llvm::Type*, 8> elementTypes;
+    elementTypes.push_back(p);
+    for (unsigned i = 0, e = STy.getArrayLen(); i != e; ++i)
+      elementTypes.push_back(i32);
+    return llvm::StructType::get(TheModule.getContext(), elementTypes);
+    */
+    const llvm::Type *a = llvm::ArrayType::get(i32, STy.getArrayLen());
+    return llvm::StructType::get(TheModule.getContext(), p, a, NULL);
+  }
   case Type::VariableArray: {
     const VariableArrayType &A = cast<VariableArrayType>(Ty);
     assert(A.getIndexTypeCVRQualifiers() == 0 &&

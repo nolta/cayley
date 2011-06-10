@@ -246,6 +246,7 @@ ExprResult Sema::ImpCastExprToType(Expr *E, QualType Ty,
 CastKind Sema::ScalarTypeToBooleanCastKind(QualType ScalarTy) {
   switch (ScalarTy->getScalarTypeKind()) {
   case Type::STK_Bool: return CK_NoOp;
+  case Type::STK_Slice: return CK_SliceToBoolean;
   case Type::STK_Pointer: return CK_PointerToBoolean;
   case Type::STK_MemberPointer: return CK_MemberPointerToBoolean;
   case Type::STK_Integral: return CK_IntegralToBoolean;

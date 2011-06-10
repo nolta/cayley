@@ -317,6 +317,14 @@ void StmtProfiler::VisitArraySubscriptExpr(ArraySubscriptExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitArraySubscriptsExpr(ArraySubscriptsExpr *S) {
+  VisitExpr(S);
+}
+
+void StmtProfiler::VisitSliceExpr(SliceExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitCallExpr(CallExpr *S) {
   VisitExpr(S);
 }

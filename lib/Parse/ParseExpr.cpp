@@ -813,6 +813,8 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return move(Res);
   }
 
+  case tok::kw___slice_dim1:
+  case tok::kw___slice_dim2:
   case tok::star:          // unary-expression: '*' cast-expression
   case tok::plus:          // unary-expression: '+' cast-expression
   case tok::minus:         // unary-expression: '-' cast-expression
@@ -914,6 +916,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw_unsigned:
   case tok::kw_float:
   case tok::kw_double:
+  case tok::kw_quad:
   case tok::kw_void:
   case tok::kw_typename:
   case tok::kw_typeof:
@@ -1183,22 +1186,78 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         return move(LHS);
           
       Loc = ConsumeBracket();
-      ExprResult Idx;
-      if (getLang().CPlusPlus0x && Tok.is(tok::l_brace))
-        Idx = ParseBraceInitializer();
-      else
-        Idx = ParseExpression();
+      if (!getLang().Cayley) {
+        ExprResult Idx;
+        if (getLang().CPlusPlus0x && Tok.is(tok::l_brace))
+          Idx = ParseBraceInitializer();
+        else
+          Idx = ParseExpression();
 
-      SourceLocation RLoc = Tok.getLocation();
+        SourceLocation RLoc = Tok.getLocation();
+  
+        if (!LHS.isInvalid() && !Idx.isInvalid() && Tok.is(tok::r_square)) {
+          LHS = Actions.ActOnArraySubscriptExpr(getCurScope(), LHS.take(), Loc,
+                                                Idx.take(), RLoc);
+        } else
+          LHS = ExprError();
 
-      if (!LHS.isInvalid() && !Idx.isInvalid() && Tok.is(tok::r_square)) {
-        LHS = Actions.ActOnArraySubscriptExpr(getCurScope(), LHS.take(), Loc,
-                                              Idx.take(), RLoc);
-      } else
+        // Match the ']'.
+        MatchRHSPunctuation(tok::r_square, Loc);
+
+      } else {
+        // Cayley allows for multicies
+        ExprVector ArgExprs(Actions);
+        CommaLocsTy CommaLocs;
+      
+        if (ParseExpressionList(ArgExprs, CommaLocs, &Sema::CodeCompleteCall,
+                                LHS.get())) {
+          LHS = ExprError();
+        }
+
+        // Match the ']'.
+        if (LHS.isInvalid()) {
+          SkipUntil(tok::r_square);
+        } else if (Tok.isNot(tok::r_square)) {
+          MatchRHSPunctuation(tok::r_square, Loc);
+          LHS = ExprError();
+        } else {
+          assert((ArgExprs.size() == 0 || 
+                  ArgExprs.size()-1 == CommaLocs.size())&&
+                 "Unexpected number of commas!");
+          if (ArgExprs.size() == 1)
+            LHS = Actions.ActOnArraySubscriptExpr(getCurScope(), LHS.take(), Loc,
+                                      ArgExprs[0], Tok.getLocation());
+          else
+            LHS = Actions.ActOnArraySubscriptsExpr(getCurScope(), LHS.take(), Loc,
+                                      move_arg(ArgExprs), Tok.getLocation());
+          ConsumeBracket();
+        }
+      }
+      break;
+    }
+
+    case tok::slashl_square: {
+      // Cayley slice
+      Loc = ConsumeToken();
+      ExprVector ArgExprs(Actions);
+      CommaLocsTy CommaLocs;
+    
+      if (ParseExpressionList(ArgExprs, CommaLocs, &Sema::CodeCompleteCall,
+                         LHS.get())) {
         LHS = ExprError();
+      }
 
       // Match the ']'.
-      MatchRHSPunctuation(tok::r_square, Loc);
+      if (LHS.isInvalid()) {
+        SkipUntil(tok::r_square);
+      } else if (Tok.isNot(tok::r_square)) {
+        MatchRHSPunctuation(tok::r_square, Loc);
+        LHS = ExprError();
+      } else {
+        LHS = Actions.ActOnSliceExpr(getCurScope(), LHS.take(), Loc,
+                                     move_arg(ArgExprs), Tok.getLocation());
+        ConsumeBracket();
+      }
       break;
     }
 

@@ -45,7 +45,7 @@ namespace clang {
     /// for the previous version could still support reading the new
     /// version by ignoring new kinds of subblocks), this number
     /// should be increased.
-    const unsigned VERSION_MINOR = 0;
+    const unsigned VERSION_MINOR = 1;
 
     /// \brief An ID number that refers to a declaration in an AST file.
     ///
@@ -599,7 +599,9 @@ namespace clang {
       /// \brief A AutoType record.
       TYPE_AUTO                  = 38,
       /// \brief A UnaryTransformType record.
-      TYPE_UNARY_TRANSFORM       = 39
+      TYPE_UNARY_TRANSFORM       = 39,
+      /// \brief A SliceType record.
+      TYPE_SLICE                    = 40
     };
 
     /// \brief The type IDs for special types constructed by semantic
@@ -859,6 +861,10 @@ namespace clang {
       EXPR_SIZEOF_ALIGN_OF,
       /// \brief An ArraySubscriptExpr record.
       EXPR_ARRAY_SUBSCRIPT,
+      /// \brief An ArraySubscriptsExpr record.
+      EXPR_ARRAY_SUBSCRIPTS,
+      /// \brief A SliceExpr record.
+      EXPR_SLICE,
       /// \brief A CallExpr record.
       EXPR_CALL,
       /// \brief A MemberExpr record.

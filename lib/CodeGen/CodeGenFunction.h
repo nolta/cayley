@@ -554,6 +554,7 @@ public:
   const TargetInfo &Target;
 
   typedef std::pair<llvm::Value *, llvm::Value *> ComplexPairTy;
+  typedef std::pair<llvm::Value *, llvm::Value *> SlicePairTy;
   CGBuilderTy Builder;
 
   /// CurFuncDecl - Holds the Decl for the current function or ObjC method.
@@ -1570,6 +1571,8 @@ public:
                                        bool isInc, bool isPre);
   ComplexPairTy EmitComplexPrePostIncDec(const UnaryOperator *E, LValue LV,
                                          bool isInc, bool isPre);
+  SlicePairTy EmitSlicePrePostIncDec(const UnaryOperator *E, LValue LV,
+                                     bool isInc, bool isPre);
   //===--------------------------------------------------------------------===//
   //                            Declaration Emission
   //===--------------------------------------------------------------------===//
@@ -1812,6 +1815,10 @@ public:
   LValue EmitComplexAssignmentLValue(const BinaryOperator *E);
   LValue EmitComplexCompoundAssignmentLValue(const CompoundAssignOperator *E);
 
+  /// Emit an l-value for an assignment (simple or compound) of slice type.
+  LValue EmitSliceAssignmentLValue(const BinaryOperator *E);
+  LValue EmitSliceCompoundAssignmentLValue(const CompoundAssignOperator *E);
+
   // Note: only available for agg return types
   LValue EmitBinaryOperatorLValue(const BinaryOperator *E);
   LValue EmitCompoundAssignmentLValue(const CompoundAssignOperator *E);
@@ -1824,7 +1831,10 @@ public:
   LValue EmitObjCEncodeExprLValue(const ObjCEncodeExpr *E);
   LValue EmitPredefinedLValue(const PredefinedExpr *E);
   LValue EmitUnaryOpLValue(const UnaryOperator *E);
+  LValue EmitSliceDimLValue(const UnaryOperator *E, unsigned I);
   LValue EmitArraySubscriptExpr(const ArraySubscriptExpr *E);
+  LValue EmitArraySubscriptsExpr(const ArraySubscriptsExpr *E);
+  LValue EmitSliceExpr(const SliceExpr *E);
   LValue EmitExtVectorElementExpr(const ExtVectorElementExpr *E);
   LValue EmitMemberExpr(const MemberExpr *E);
   LValue EmitObjCIsaExpr(const ObjCIsaExpr *E);
@@ -1987,6 +1997,11 @@ public:
   llvm::Value *EmitComplexToScalarConversion(ComplexPairTy Src, QualType SrcTy,
                                              QualType DstTy);
 
+  /// EmitSliceToScalarConversion - Emit a conversion from the specified
+  /// slice type to the specified destination type, where the destination type
+  /// is an LLVM scalar type.
+  llvm::Value *EmitSliceToScalarConversion(SlicePairTy Src, QualType SrcTy,
+                                             QualType DstTy);
 
   /// EmitAggExpr - Emit the computation of the specified expression
   /// of aggregate type.  The result is computed into the given slot,
@@ -2018,6 +2033,23 @@ public:
                           bool DestIsVolatile);
   /// LoadComplexFromAddr - Load a complex number from the specified address.
   ComplexPairTy LoadComplexFromAddr(llvm::Value *SrcAddr, bool SrcIsVolatile);
+
+  /// EmitSliceExpr - Emit the computation of the specified expression of
+  /// complex type, returning the result.
+  SlicePairTy EmitSliceExpr(const Expr *E,
+                            bool IgnorePointer = false,
+                            bool IgnoreDims = false);
+
+  /// EmitSliceExprIntoAddr - Emit the computation of the specified expression
+  /// of complex type, storing into the specified Value*.
+  void EmitSliceExprIntoAddr(const Expr *E, llvm::Value *DestAddr,
+                             bool DestIsVolatile);
+
+  /// StoreSliceToAddr - Store a complex number into the specified address.
+  void StoreSliceToAddr(SlicePairTy V, llvm::Value *DestAddr,
+                        bool DestIsVolatile);
+  /// LoadSliceFromAddr - Load a complex number from the specified address.
+  SlicePairTy LoadSliceFromAddr(llvm::Value *SrcAddr, bool SrcIsVolatile);
 
   /// CreateStaticVarDecl - Create a zero-initialized LLVM global for
   /// a static local variable.
@@ -2254,7 +2286,7 @@ template <> struct DominatingValue<RValue> {
   typedef RValue type;
   class saved_type {
     enum Kind { ScalarLiteral, ScalarAddress, AggregateLiteral,
-                AggregateAddress, ComplexAddress };
+                AggregateAddress, ComplexAddress, SliceAddress };
 
     llvm::Value *Value;
     Kind K;

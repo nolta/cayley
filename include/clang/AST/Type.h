@@ -1267,6 +1267,7 @@ public:
   bool isFunctionNoProtoType() const { return getAs<FunctionNoProtoType>(); }
   bool isFunctionProtoType() const { return getAs<FunctionProtoType>(); }
   bool isPointerType() const;
+  bool isSliceType() const;
   bool isAnyPointerType() const;   // Any C pointer or ObjC object pointer
   bool isBlockPointerType() const;
   bool isVoidPointerType() const;
@@ -1305,9 +1306,12 @@ public:
   bool isTemplateTypeParmType() const;          // C++ template type parameter
   bool isNullPtrType() const;                   // C++0x nullptr_t
 
+  bool isAnyComplexOrSliceType() const;
+
   enum ScalarTypeKind {
     STK_Pointer,
     STK_MemberPointer,
+    STK_Slice,
     STK_Bool,
     STK_Integral,
     STK_Floating,
@@ -1714,6 +1718,44 @@ public:
 
   static bool classof(const Type *T) { return T->getTypeClass() == Pointer; }
   static bool classof(const PointerType *) { return true; }
+};
+
+/// Slice Type.
+///
+class SliceType : public Type, public llvm::FoldingSetNode {
+  QualType PointeeType;
+  QualType ArrayType;
+  unsigned NumDims;
+
+  SliceType(QualType Pointee, QualType CanonicalPtr, unsigned NumDims) :
+    Type(Slice, CanonicalPtr, Pointee->isDependentType(),
+         Pointee->isVariablyModifiedType(),
+         Pointee->containsUnexpandedParameterPack()), 
+    PointeeType(Pointee), NumDims(NumDims) {
+  }
+  friend class ASTContext;  // ASTContext creates these.
+
+public:
+
+  QualType getPointeeType() const { return PointeeType; }
+  unsigned getNumDims() const { return NumDims; }
+  unsigned getArrayLen() const { return 2*NumDims; }
+  unsigned getArrayIdxOfStride(unsigned I) const { return I; }
+  unsigned getArrayIdxOfDim(unsigned I) const { return I + NumDims; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, getPointeeType(), getNumDims());
+  }
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType Pointee, unsigned NumDims) {
+    ID.AddPointer(Pointee.getAsOpaquePtr());
+    ID.AddInteger(NumDims);
+  }
+
+  static bool classof(const Type *T) { return T->getTypeClass() == Slice; }
+  static bool classof(const SliceType *) { return true; }
 };
 
 /// BlockPointerType - pointer to a block type.
@@ -4345,6 +4387,9 @@ inline bool Type::isPointerType() const {
 inline bool Type::isAnyPointerType() const {
   return isPointerType() || isObjCObjectPointerType();
 }
+inline bool Type::isSliceType() const {
+  return isa<SliceType>(CanonicalType);
+}
 inline bool Type::isBlockPointerType() const {
   return isa<BlockPointerType>(CanonicalType);
 }
@@ -4486,6 +4531,10 @@ inline bool Type::hasPointerRepresentation() const {
 
 inline bool Type::hasObjCPointerRepresentation() const {
   return isObjCObjectPointerType();
+}
+
+inline bool Type::isAnyComplexOrSliceType() const {
+    return (isAnyComplexType() || isSliceType());
 }
 
 inline const Type *Type::getBaseElementTypeUnsafe() const {

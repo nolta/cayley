@@ -42,7 +42,8 @@
   OPERATOR(Plus)      OPERATOR(Minus)           \
   OPERATOR(Not)       OPERATOR(LNot)            \
   OPERATOR(Real)      OPERATOR(Imag)            \
-  OPERATOR(Extension)
+  OPERATOR(Extension)                           \
+  OPERATOR(SliceDim1) OPERATOR(SliceDim2)
 
 // All binary operators (excluding compound assign operators).
 #define BINOP_LIST() \
@@ -665,6 +666,10 @@ DEF_TRAVERSE_TYPE(PointerType, {
     TRY_TO(TraverseType(T->getPointeeType()));
   })
 
+DEF_TRAVERSE_TYPE(SliceType, {
+    TRY_TO(TraverseType(T->getPointeeType()));
+  })
+
 DEF_TRAVERSE_TYPE(BlockPointerType, {
     TRY_TO(TraverseType(T->getPointeeType()));
   })
@@ -861,6 +866,10 @@ DEF_TRAVERSE_TYPELOC(ComplexType, {
   })
 
 DEF_TRAVERSE_TYPELOC(PointerType, {
+    TRY_TO(TraverseTypeLoc(TL.getPointeeLoc()));
+  })
+
+DEF_TRAVERSE_TYPELOC(SliceType, {
     TRY_TO(TraverseTypeLoc(TL.getPointeeLoc()));
   })
 
@@ -1900,6 +1909,7 @@ DEF_TRAVERSE_STMT(CXXMemberCallExpr, { })
 // over the children.
 DEF_TRAVERSE_STMT(AddrLabelExpr, { })
 DEF_TRAVERSE_STMT(ArraySubscriptExpr, { })
+DEF_TRAVERSE_STMT(ArraySubscriptsExpr, { })
 DEF_TRAVERSE_STMT(BlockDeclRefExpr, { })
 DEF_TRAVERSE_STMT(BlockExpr, {
   TRY_TO(TraverseDecl(S->getBlockDecl()));
@@ -1937,6 +1947,7 @@ DEF_TRAVERSE_STMT(ParenExpr, { })
 DEF_TRAVERSE_STMT(ParenListExpr, { })
 DEF_TRAVERSE_STMT(PredefinedExpr, { })
 DEF_TRAVERSE_STMT(ShuffleVectorExpr, { })
+DEF_TRAVERSE_STMT(SliceExpr, { })
 DEF_TRAVERSE_STMT(StmtExpr, { })
 DEF_TRAVERSE_STMT(UnresolvedLookupExpr, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));

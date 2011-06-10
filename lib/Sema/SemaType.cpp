@@ -316,6 +316,7 @@ static void distributeObjCPointerTypeAttr(TypeProcessingState &state,
     switch (chunk.Kind) {
     case DeclaratorChunk::Pointer:
     case DeclaratorChunk::BlockPointer:
+    case DeclaratorChunk::Slice:
       moveAttrFromListToList(attr, state.getCurrentAttrListRef(),
                              chunk.getAttrListRef());
       return;
@@ -353,6 +354,7 @@ distributeObjCPointerTypeAttrFromDeclarator(TypeProcessingState &state,
     switch (chunk.Kind) {
     case DeclaratorChunk::Pointer:
     case DeclaratorChunk::BlockPointer:
+    case DeclaratorChunk::Slice:
       innermost = i;
       continue;
 
@@ -421,6 +423,7 @@ static void distributeFunctionTypeAttr(TypeProcessingState &state,
     case DeclaratorChunk::Array:
     case DeclaratorChunk::Reference:
     case DeclaratorChunk::MemberPointer:
+    case DeclaratorChunk::Slice:
       continue;
     }
   }
@@ -726,6 +729,7 @@ static QualType ConvertDeclSpecToType(Sema &S, TypeProcessingState &state) {
       declarator.setInvalidType(true);
     }
     break;
+  case DeclSpec::TST_quad: Result = Context.LongDoubleTy; break;
   case DeclSpec::TST_bool: Result = Context.BoolTy; break; // _Bool or bool
   case DeclSpec::TST_decimal32:    // _Decimal32
   case DeclSpec::TST_decimal64:    // _Decimal64
@@ -1043,6 +1047,28 @@ QualType Sema::BuildPointerType(QualType T,
 
   // Build the pointer type.
   return Context.getPointerType(T);
+}
+
+/// \brief Build a slice type.
+///
+/// \param T The type to which we'll be building a slice.
+///
+/// \param Loc The location of the entity whose type involves this
+/// slice type or, if there is no such entity, the location of the
+/// type that will have slice type.
+///
+/// \param Entity The name of the entity that involves the slice
+/// type, if known.
+///
+/// \returns A suitable slice type, if there are no
+/// errors. Otherwise, returns a NULL type.
+QualType Sema::BuildSliceType(QualType T, unsigned NumDims,
+                              SourceLocation Loc, DeclarationName Entity) {
+
+  assert(!T->isObjCObjectType() && "Should build ObjCObjectPointerType");
+
+  // Build the slice type.
+  return Context.getSliceType(T, NumDims);
 }
 
 /// \brief Build a reference type.
@@ -1695,6 +1721,15 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S,
       T = BuildBlockPointerType(T, D.getIdentifierLoc(), Name);
       if (DeclType.Cls.TypeQuals)
         T = BuildQualifiedType(T, DeclType.Loc, DeclType.Cls.TypeQuals);
+      break;
+    case DeclaratorChunk::Slice:
+      // If slices are disabled, emit an error.
+      if (!LangOpts.Cayley)
+        Diag(DeclType.Loc, diag::err_slices_disable);
+
+      T = BuildSliceType(T, DeclType.Slc.NumDims, D.getIdentifierLoc(), Name);
+      if (DeclType.Slc.TypeQuals)
+        T = BuildQualifiedType(T, DeclType.Loc, DeclType.Slc.TypeQuals);
       break;
     case DeclaratorChunk::Pointer:
       // Verify that we're not building a pointer to pointer to function with
@@ -2494,6 +2529,10 @@ namespace {
     void VisitPointerTypeLoc(PointerTypeLoc TL) {
       assert(Chunk.Kind == DeclaratorChunk::Pointer);
       TL.setStarLoc(Chunk.Loc);
+    }
+    void VisitSliceTypeLoc(SliceTypeLoc TL) {
+      assert(Chunk.Kind == DeclaratorChunk::Slice);
+      TL.setDollarLoc(Chunk.Loc);
     }
     void VisitObjCObjectPointerTypeLoc(ObjCObjectPointerTypeLoc TL) {
       assert(Chunk.Kind == DeclaratorChunk::Pointer);

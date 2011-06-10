@@ -46,6 +46,7 @@ namespace {
     QualType VisitComplexType(const ComplexType *T);
     QualType VisitPointerType(const PointerType *T);
     QualType VisitBlockPointerType(const BlockPointerType *T);
+    QualType VisitSliceType(const SliceType *T);
     QualType VisitLValueReferenceType(const LValueReferenceType *T);
     QualType VisitRValueReferenceType(const RValueReferenceType *T);
     QualType VisitMemberPointerType(const MemberPointerType *T);
@@ -407,6 +408,18 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                   cast<BlockPointerType>(T2)->getPointeeType()))
       return false;
     break;
+
+  case Type::Slice: {
+    const SliceType *Slice1 = cast<SliceType>(T1);
+    const SliceType *Slice2 = cast<SliceType>(T2);
+    if (Slice1->getNumDims() != Slice2->getNumDims())
+      return false;
+    if (!IsStructurallyEquivalent(Context,
+                                  Slice1->getPointeeType(),
+                                  Slice2->getPointeeType()))
+      return false;
+    break;
+  }
 
   case Type::LValueReference:
   case Type::RValueReference: {
@@ -1401,6 +1414,14 @@ QualType ASTNodeImporter::VisitPointerType(const PointerType *T) {
     return QualType();
   
   return Importer.getToContext().getPointerType(ToPointeeType);
+}
+
+QualType ASTNodeImporter::VisitSliceType(const SliceType *T) {
+  QualType ToPointeeType = Importer.Import(T->getPointeeType());
+  if (ToPointeeType.isNull())
+    return QualType();
+  
+  return Importer.getToContext().getSliceType(ToPointeeType, T->getNumDims());
 }
 
 QualType ASTNodeImporter::VisitBlockPointerType(const BlockPointerType *T) {

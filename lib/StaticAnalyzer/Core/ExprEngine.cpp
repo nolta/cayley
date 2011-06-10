@@ -559,6 +559,12 @@ void ExprEngine::Visit(const Stmt* S, ExplodedNode* Pred,
       VisitLvalArraySubscriptExpr(cast<ArraySubscriptExpr>(S), Pred, Dst);
       break;
 
+      /* TODO
+    case Stmt::ArraySubscriptsExprClass:
+      VisitLvalArraySubscriptsExpr(cast<ArraySubscriptsExpr>(S), Pred, Dst);
+      break;
+      */
+
     case Stmt::AsmStmtClass:
       VisitAsmStmt(cast<AsmStmt>(S), Pred, Dst);
       break;

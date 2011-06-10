@@ -60,6 +60,12 @@ TYPE("c++-header",               CXXHeader,    PP_CXXHeader,    0,       "pu")
 TYPE("objective-c++-header-cpp-output", PP_ObjCXXHeader, INVALID, "mii", "p")
 TYPE("objective-c++-header",     ObjCXXHeader, PP_ObjCXXHeader, 0,       "pu")
 
+// Cayley
+TYPE("cayley-cpp-output",        PP_Cayley,    INVALID,         "cyi",   "u")
+TYPE("cayley",                   Cayley,       PP_Cayley,       0,       "u")
+TYPE("cayley-header-cpp-output", PP_CayleyHeader, INVALID,      "cyi",   "p")
+TYPE("cayley-header",            CayleyHeader, PP_CayleyHeader, 0,       "pu")
+
 // Other languages.
 TYPE("ada",                      Ada,          INVALID,         0,       "u")
 TYPE("assembler",                PP_Asm,       INVALID,         "s",     "au")

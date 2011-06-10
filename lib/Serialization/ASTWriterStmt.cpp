@@ -71,6 +71,8 @@ namespace clang {
     void VisitOffsetOfExpr(OffsetOfExpr *E);
     void VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E);
     void VisitArraySubscriptExpr(ArraySubscriptExpr *E);
+    void VisitArraySubscriptsExpr(ArraySubscriptsExpr *E);
+    void VisitSliceExpr(SliceExpr *E);
     void VisitCallExpr(CallExpr *E);
     void VisitMemberExpr(MemberExpr *E);
     void VisitCastExpr(CastExpr *E);
@@ -552,6 +554,29 @@ void ASTStmtWriter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   Writer.AddStmt(E->getRHS());
   Writer.AddSourceLocation(E->getRBracketLoc(), Record);
   Code = serialization::EXPR_ARRAY_SUBSCRIPT;
+}
+
+void ASTStmtWriter::VisitArraySubscriptsExpr(ArraySubscriptsExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getNumArgs());
+  Writer.AddSourceLocation(E->getRBracketLoc(), Record);
+  Writer.AddStmt(E->getLHS());
+  for (ArraySubscriptsExpr::arg_iterator
+         Arg = E->arg_begin(), ArgEnd = E->arg_end();
+       Arg != ArgEnd; ++Arg)
+    Writer.AddStmt(*Arg);
+  Code = serialization::EXPR_ARRAY_SUBSCRIPTS;
+}
+
+void ASTStmtWriter::VisitSliceExpr(SliceExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getNumArgs());
+  Writer.AddSourceLocation(E->getRBracketLoc(), Record);
+  Writer.AddStmt(E->getLHS());
+  for (SliceExpr::arg_iterator Arg = E->arg_begin(), ArgEnd = E->arg_end();
+       Arg != ArgEnd; ++Arg)
+    Writer.AddStmt(*Arg);
+  Code = serialization::EXPR_SLICE;
 }
 
 void ASTStmtWriter::VisitCallExpr(CallExpr *E) {

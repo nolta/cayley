@@ -551,6 +551,9 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
   } else if (MemberInit->getInit()->getType()->isAnyComplexType()) {
     CGF.EmitComplexExprIntoAddr(MemberInit->getInit(), LHS.getAddress(),
                                 LHS.isVolatileQualified());
+  } else if (MemberInit->getInit()->getType()->isSliceType()) {
+    CGF.EmitSliceExprIntoAddr(MemberInit->getInit(), LHS.getAddress(),
+                              LHS.isVolatileQualified());
   } else {
     llvm::Value *ArrayIndexVar = 0;
     const ConstantArrayType *Array

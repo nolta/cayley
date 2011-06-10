@@ -310,6 +310,10 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
       Builder.defineMacro("__NEXT_RUNTIME__");
   }
 
+  if (LangOpts.Cayley) {
+      Builder.defineMacro("__Cayley");
+  }
+
   // darwin_constant_cfstrings controls this. This is also dependent
   // on other things like the runtime I believe.  This is set even for C code.
   Builder.defineMacro("__CONSTANT_CFSTRINGS__");

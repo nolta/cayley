@@ -340,6 +340,8 @@ QualType Type::getPointeeType() const {
     return BPT->getPointeeType();
   if (const ReferenceType *RT = getAs<ReferenceType>())
     return RT->getPointeeType();
+  if (const SliceType *ST = getAs<SliceType>())
+    return ST->getPointeeType();
   return QualType();
 }
 
@@ -476,6 +478,9 @@ namespace {
       return Visit(T->getPointeeType());
     }
     AutoType *VisitBlockPointerType(const BlockPointerType *T) {
+      return Visit(T->getPointeeType());
+    }
+    AutoType *VisitSliceType(const SliceType *T) {
       return Visit(T->getPointeeType());
     }
     AutoType *VisitReferenceType(const ReferenceType *T) {
@@ -765,6 +770,7 @@ bool Type::isScalarType() const {
     return ET->getDecl()->isComplete();
   return isa<PointerType>(CanonicalType) ||
          isa<BlockPointerType>(CanonicalType) ||
+         isa<SliceType>(CanonicalType) ||
          isa<MemberPointerType>(CanonicalType) ||
          isa<ComplexType>(CanonicalType) ||
          isa<ObjCObjectPointerType>(CanonicalType);
@@ -784,6 +790,8 @@ Type::ScalarTypeKind Type::getScalarTypeKind() const {
              isa<BlockPointerType>(T) ||
              isa<ObjCObjectPointerType>(T)) {
     return STK_Pointer;
+  } else if (isa<SliceType>(T)) {
+    return STK_Slice;
   } else if (isa<MemberPointerType>(T)) {
     return STK_MemberPointer;
   } else if (isa<EnumType>(T)) {
@@ -893,6 +901,7 @@ bool Type::isPODType() const {
   case ExtVector:
   case ObjCObjectPointer:
   case BlockPointer:
+  case Slice:
     return true;
 
   case Enum:
@@ -1326,9 +1335,9 @@ const char *BuiltinType::getName(const LangOptions &LO) const {
   case ULong:             return "unsigned long";
   case ULongLong:         return "unsigned long long";
   case UInt128:           return "__uint128_t";
-  case Float:             return "float";
-  case Double:            return "double";
-  case LongDouble:        return "long double";
+  case Float:             return LO.Cayley ? "flt"  : "float";
+  case Double:            return LO.Cayley ? "dbl"  : "double";
+  case LongDouble:        return LO.Cayley ? "quad" : "long double";
   case WChar_S:
   case WChar_U:           return "wchar_t";
   case Char16:            return "char16_t";
@@ -1827,6 +1836,10 @@ static CachedProperties computeCachedProperties(const Type *T) {
     return Cache::get(cast<ComplexType>(T)->getElementType());
   case Type::Pointer:
     return Cache::get(cast<PointerType>(T)->getPointeeType());
+  case Type::Slice: {
+    const SliceType *ST = cast<SliceType>(T);
+    return Cache::get(ST->getPointeeType());
+  }
   case Type::BlockPointer:
     return Cache::get(cast<BlockPointerType>(T)->getPointeeType());
   case Type::LValueReference:

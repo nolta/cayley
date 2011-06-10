@@ -3078,6 +3078,10 @@ bool UnnamedLocalNoLinkageFinder::VisitBlockPointerType(
   return Visit(T->getPointeeType());
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitSliceType( const SliceType* T) {
+  return Visit(T->getPointeeType());
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitLValueReferenceType(
                                                 const LValueReferenceType* T) {
   return Visit(T->getPointeeType());

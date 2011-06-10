@@ -2155,7 +2155,13 @@ LexNextToken:
     MIOpt.ReadToken();
     return LexIdentifier(Result, CurPtr);
 
-  case '$':   // $ in identifiers.
+  case '$':
+    if (Features.Cayley) {
+      Kind = tok::dollar;
+      break;
+    }
+
+    // $ in identifiers.
     if (Features.DollarIdents) {
       if (!isLexingRawMode())
         Diag(CurPtr-1, diag::ext_dollar_in_identifier);
@@ -2317,6 +2323,9 @@ LexNextToken:
     if (Char == '=') {
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::slashequal;
+    } else if (Features.Cayley && Char == '[') {
+      CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
+      Kind = tok::slashl_square;
     } else {
       Kind = tok::slash;
     }

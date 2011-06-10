@@ -785,6 +785,10 @@ void CodeGenFunction::EmitExprAsInit(const Expr *init,
     ComplexPairTy complex = EmitComplexExpr(init);
     if (capturedByInit) loc = BuildBlockByrefAddress(loc, var);
     StoreComplexToAddr(complex, loc, isVolatile);
+  } else if (type->isSliceType()) {
+    SlicePairTy slice = EmitSliceExpr(init);
+    if (capturedByInit) loc = BuildBlockByrefAddress(loc, var);
+    StoreSliceToAddr(slice, loc, isVolatile);
   } else {
     // TODO: how can we delay here if D is captured by its initializer?
     EmitAggExpr(init, AggValueSlot::forAddr(loc, isVolatile, true, false));

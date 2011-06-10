@@ -1169,6 +1169,7 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
               FromType->isAnyPointerType() ||
               FromType->isBlockPointerType() ||
               FromType->isMemberPointerType() ||
+              FromType->isSliceType() ||
               FromType->isNullPtrType())) {
     // Boolean conversions (C++ 4.12).
     SCS.Second = ICK_Boolean_Conversion;

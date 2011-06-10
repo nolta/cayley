@@ -2724,6 +2724,8 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::ImaginaryLiteralClass:
   case Expr::StringLiteralClass:
   case Expr::ArraySubscriptExprClass:
+  case Expr::ArraySubscriptsExprClass:
+  case Expr::SliceExprClass:
   case Expr::MemberExprClass:
   case Expr::CompoundAssignOperatorClass:
   case Expr::CompoundLiteralExprClass:

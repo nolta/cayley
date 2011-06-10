@@ -1031,6 +1031,9 @@ bool typeIsPostfix(clang::QualType QT) {
     case Type::BlockPointer:
       QT = cast<BlockPointerType>(T)->getPointeeType();
       break;
+    case Type::Slice:
+      QT = cast<SliceType>(T)->getPointeeType();
+      break;
     case Type::MemberPointer:
       QT = cast<MemberPointerType>(T)->getPointeeType();
       break;

@@ -104,6 +104,8 @@ static QualType GetBaseType(QualType T) {
       BaseType = FTy->getResultType();
     else if (const VectorType *VTy = BaseType->getAs<VectorType>())
       BaseType = VTy->getElementType();
+    else if (const SliceType *STy = BaseType->getAs<SliceType>())
+      BaseType = STy->getPointeeType();
     else
       assert(0 && "Unknown declarator!");
   }

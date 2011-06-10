@@ -626,6 +626,8 @@ const char *UnaryOperator::getOpcodeStr(Opcode Op) {
   case UO_Real:    return "__real";
   case UO_Imag:    return "__imag";
   case UO_Extension: return "__extension__";
+  case UO_SliceDim1: return "__slice_dim1";
+  case UO_SliceDim2: return "__slice_dim2";
   }
 }
 
@@ -662,6 +664,108 @@ OverloadedOperatorKind UnaryOperator::getOverloadedOperator(Opcode Opc) {
 //===----------------------------------------------------------------------===//
 // Postfix Operators.
 //===----------------------------------------------------------------------===//
+
+ArraySubscriptsExpr::ArraySubscriptsExpr(ASTContext& C, Expr *lhs, Expr **args,
+                   unsigned numargs, QualType t, ExprValueKind VK,
+                   ExprObjectKind OK, SourceLocation rbracketloc)
+  : Expr(ArraySubscriptsExprClass, t, VK, OK,
+         lhs->isTypeDependent(),
+         lhs->isValueDependent(),
+         lhs->containsUnexpandedParameterPack()),
+    NumArgs(numargs), RBracketLoc(rbracketloc) {
+
+  SubExprs = new (C) Stmt*[numargs+ARGS_START];
+  SubExprs[LHS] = lhs;
+  for (unsigned i = 0; i != numargs; ++i) {
+    if (args[i]->isTypeDependent())
+      ExprBits.TypeDependent = true;
+    if (args[i]->isValueDependent())
+      ExprBits.ValueDependent = true;
+    if (args[i]->containsUnexpandedParameterPack())
+      ExprBits.ContainsUnexpandedParameterPack = true;
+
+    SubExprs[i+ARGS_START] = args[i];
+  }
+}
+
+/// setNumArgs - This changes the number of arguments present in this call.
+/// Any orphaned expressions are deleted by this, and any new operands are set
+/// to null.
+void ArraySubscriptsExpr::setNumArgs(ASTContext& C, unsigned NumArgs) {
+  // No change, just return.
+  if (NumArgs == getNumArgs()) return;
+
+  // If shrinking # arguments, just delete the extras and forgot them.
+  if (NumArgs < getNumArgs()) {
+    this->NumArgs = NumArgs;
+    return;
+  }
+
+  // Otherwise, we are growing the # arguments.  New an bigger argument array.
+  Stmt **NewSubExprs = new (C) Stmt*[NumArgs+ARGS_START];
+  // Copy over args.
+  for (unsigned i = 0; i != getNumArgs()+ARGS_START; ++i)
+    NewSubExprs[i] = SubExprs[i];
+  // Null out new args.
+  for (unsigned i = getNumArgs()+ARGS_START;
+       i != NumArgs+ARGS_START; ++i)
+    NewSubExprs[i] = 0;
+
+  if (SubExprs) C.Deallocate(SubExprs);
+  SubExprs = NewSubExprs;
+  this->NumArgs = NumArgs;
+}
+
+SliceExpr::SliceExpr(ASTContext& C, Expr *lhs, Expr **args,
+                   unsigned numargs, QualType t, ExprValueKind VK,
+                   ExprObjectKind OK, SourceLocation rbracketloc)
+  : Expr(SliceExprClass, t, VK, OK,
+         lhs->isTypeDependent(),
+         lhs->isValueDependent(),
+         lhs->containsUnexpandedParameterPack()),
+    NumArgs(numargs), RBracketLoc(rbracketloc) {
+
+  SubExprs = new (C) Stmt*[numargs+ARGS_START];
+  SubExprs[LHS] = lhs;
+  for (unsigned i = 0; i != numargs; ++i) {
+    if (args[i]->isTypeDependent())
+      ExprBits.TypeDependent = true;
+    if (args[i]->isValueDependent())
+      ExprBits.ValueDependent = true;
+    if (args[i]->containsUnexpandedParameterPack())
+      ExprBits.ContainsUnexpandedParameterPack = true;
+
+    SubExprs[i+ARGS_START] = args[i];
+  }
+}
+
+/// setNumArgs - This changes the number of arguments present in this call.
+/// Any orphaned expressions are deleted by this, and any new operands are set
+/// to null.
+void SliceExpr::setNumArgs(ASTContext& C, unsigned NumArgs) {
+  // No change, just return.
+  if (NumArgs == getNumArgs()) return;
+
+  // If shrinking # arguments, just delete the extras and forgot them.
+  if (NumArgs < getNumArgs()) {
+    this->NumArgs = NumArgs;
+    return;
+  }
+
+  // Otherwise, we are growing the # arguments.  New an bigger argument array.
+  Stmt **NewSubExprs = new (C) Stmt*[NumArgs+ARGS_START];
+  // Copy over args.
+  for (unsigned i = 0; i != getNumArgs()+ARGS_START; ++i)
+    NewSubExprs[i] = SubExprs[i];
+  // Null out new args.
+  for (unsigned i = getNumArgs()+ARGS_START;
+       i != NumArgs+ARGS_START; ++i)
+    NewSubExprs[i] = 0;
+
+  if (SubExprs) C.Deallocate(SubExprs);
+  SubExprs = NewSubExprs;
+  this->NumArgs = NumArgs;
+}
 
 CallExpr::CallExpr(ASTContext& C, StmtClass SC, Expr *fn, unsigned NumPreArgs,
                    Expr **args, unsigned numargs, QualType t, ExprValueKind VK,
@@ -986,6 +1090,8 @@ const char *CastExpr::getCastKindName() const {
     return "NullToMemberPointer";
   case CK_NullToPointer:
     return "NullToPointer";
+  case CK_NullToSlice:
+    return "NullToSlice";
   case CK_BaseToDerivedMemberPointer:
     return "BaseToDerivedMemberPointer";
   case CK_DerivedToBaseMemberPointer:
@@ -1000,6 +1106,8 @@ const char *CastExpr::getCastKindName() const {
     return "PointerToIntegral";
   case CK_PointerToBoolean:
     return "PointerToBoolean";
+  case CK_PointerToSlice:
+    return "PointerToSlice";
   case CK_ToVoid:
     return "ToVoid";
   case CK_VectorSplat:
@@ -1010,6 +1118,8 @@ const char *CastExpr::getCastKindName() const {
     return "IntegralToBoolean";
   case CK_IntegralToFloating:
     return "IntegralToFloating";
+  case CK_IntegralToSlice:
+    return "IntegralToSlice";
   case CK_FloatingToIntegral:
     return "FloatingToIntegral";
   case CK_FloatingCast:
@@ -1044,6 +1154,14 @@ const char *CastExpr::getCastKindName() const {
     return "IntegralComplexCast";
   case CK_IntegralComplexToFloatingComplex:
     return "IntegralComplexToFloatingComplex";
+  case CK_SliceCast:
+    return "SliceCast";
+  case CK_SliceToBoolean:
+    return "SliceToBoolean";
+  case CK_SliceToIntegral:
+    return "SliceToIntegral";
+  case CK_SliceToPointer:
+    return "SliceToPointer";
   }
 
   llvm_unreachable("Unhandled cast kind!");

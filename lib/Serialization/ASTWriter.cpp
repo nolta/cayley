@@ -103,6 +103,12 @@ void ASTTypeWriter::VisitPointerType(const PointerType *T) {
   Code = TYPE_POINTER;
 }
 
+void ASTTypeWriter::VisitSliceType(const SliceType *T) {
+  Writer.AddTypeRef(T->getPointeeType(), Record);
+  Record.push_back(T->getNumDims());
+  Code = TYPE_SLICE;
+}
+
 void ASTTypeWriter::VisitBlockPointerType(const BlockPointerType *T) {
   Writer.AddTypeRef(T->getPointeeType(), Record);
   Code = TYPE_BLOCK_POINTER;
@@ -424,6 +430,9 @@ void TypeLocWriter::VisitComplexTypeLoc(ComplexTypeLoc TL) {
 }
 void TypeLocWriter::VisitPointerTypeLoc(PointerTypeLoc TL) {
   Writer.AddSourceLocation(TL.getStarLoc(), Record);
+}
+void TypeLocWriter::VisitSliceTypeLoc(SliceTypeLoc TL) {
+  Writer.AddSourceLocation(TL.getDollarLoc(), Record);
 }
 void TypeLocWriter::VisitBlockPointerTypeLoc(BlockPointerTypeLoc TL) {
   Writer.AddSourceLocation(TL.getCaretLoc(), Record);
@@ -1034,6 +1043,7 @@ void ASTWriter::WriteLanguageOptions(const LangOptions &LangOpts) {
   Record.push_back(LangOpts.HexFloats);  // C99 Hexadecimal float constants.
   Record.push_back(LangOpts.C99);  // C99 Support
   Record.push_back(LangOpts.C1X);  // C1X Support
+  Record.push_back(LangOpts.Cayley);  // Cayley Support
   Record.push_back(LangOpts.Microsoft);  // Microsoft extensions.
   // LangOpts.MSCVersion is ignored because all it does it set a macro, which is
   // already saved elsewhere.

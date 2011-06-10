@@ -140,6 +140,8 @@ protected:
     friend class CXXNewExpr; // ctor
     friend class DependentScopeDeclRefExpr; // ctor
     friend class CXXConstructExpr; // ctor
+    friend class ArraySubscriptsExpr; // ctor
+    friend class SliceExpr; // ctor
     friend class CallExpr; // ctor
     friend class OffsetOfExpr; // ctor
     friend class ObjCMessageExpr; // ctor

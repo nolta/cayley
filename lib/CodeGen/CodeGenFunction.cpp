@@ -85,6 +85,7 @@ bool CodeGenFunction::hasAggregateLLVMType(QualType type) {
   case Type::Record:
   case Type::ObjCObject:
   case Type::ObjCInterface:
+  case Type::Slice:
     return true;
   }
   llvm_unreachable("unknown type kind!");

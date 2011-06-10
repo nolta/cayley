@@ -42,6 +42,7 @@ namespace clang {
     TST_int,
     TST_float,
     TST_double,
+    TST_quad,         // Cayley long double
     TST_bool,         // _Bool
     TST_decimal32,    // _Decimal32
     TST_decimal64,    // _Decimal64

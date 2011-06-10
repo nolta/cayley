@@ -339,6 +339,9 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_IntegralComplexToBoolean:
   case CK_IntegralComplexCast:
   case CK_IntegralComplexToFloatingComplex:
+  case CK_SliceCast:
+  case CK_PointerToSlice:
+  case CK_SliceToPointer:
     llvm_unreachable("cast kind invalid for aggregate types");
   }
 }
@@ -569,6 +572,8 @@ AggExprEmitter::EmitInitializationToLValue(Expr* E, LValue LV, QualType T) {
     CGF.EmitStoreThroughLValue(RV, LV, T);
   } else if (T->isAnyComplexType()) {
     CGF.EmitComplexExprIntoAddr(E, LV.getAddress(), false);
+  } else if (T->isSliceType()) {
+    CGF.EmitSliceExprIntoAddr(E, LV.getAddress(), false);
   } else if (CGF.hasAggregateLLVMType(T)) {
     CGF.EmitAggExpr(E, AggValueSlot::forAddr(LV.getAddress(), false, true,
                                              false, Dest.isZeroed()));
@@ -899,7 +904,7 @@ LValue CodeGenFunction::EmitAggExprToLValue(const Expr *E) {
 void CodeGenFunction::EmitAggregateCopy(llvm::Value *DestPtr,
                                         llvm::Value *SrcPtr, QualType Ty,
                                         bool isVolatile) {
-  assert(!Ty->isAnyComplexType() && "Shouldn't happen for complex");
+  assert(!Ty->isAnyComplexOrSliceType() && "Shouldn't happen for complex/slice");
 
   if (getContext().getLangOptions().CPlusPlus) {
     if (const RecordType *RT = Ty->getAs<RecordType>()) {
