@@ -11,6 +11,7 @@ layout: default
 Example
 -------
 
+{% highlight c %}
     #include <stdio.h>
     #include <stdlib.h>
 
@@ -45,6 +46,7 @@ Example
 
         free(d);
     }
+{% endhighlight %}
 
 Syntax
 ------
