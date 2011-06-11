@@ -3,7 +3,7 @@
 <head>
   <meta charset='utf-8'>
 
-  <title>nolta/cayley @ GitHub</title>
+  <title>Cayley</title>
 
   <style type="text/css">
     body {
@@ -24,7 +24,7 @@
     a { color: #000000; }
     .description { font-size: 1.2em; margin-bottom: 30px; margin-top: 30px; font-style: italic;}
     .download { float: right; }
-    pre { background: #000; color: #fff; padding: 15px;}
+    pre { border: 1px solid #000; padding: 15px;}
     hr { border: 0; width: 80%; border-bottom: 1px solid #aaa}
     .footer { text-align:center; padding-top:30px; font-style: italic; }
   </style>
@@ -35,19 +35,69 @@
 
   <div id="container">
 
+      <!--
     <div class="download">
       <a href="http://github.com/nolta/cayley/zipball/master">
         <img border="0" width="90" src="http://github.com/images/modules/download/zip.png"></a>
       <a href="http://github.com/nolta/cayley/tarball/master">
         <img border="0" width="90" src="http://github.com/images/modules/download/tar.png"></a>
     </div>
+    -->
 
     <h1><a href="http://github.com/nolta/cayley">Cayley</a></h1>
-    <h2>"C + multidimensional pointers"</h2>
-
     <div class="description">
-      
+        "C + multidimensional pointers"
     </div>
+
+    <h2>Example</h2>
+
+    <pre>
+{% highlight c %}
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+void
+print_matrix(dbl $$matrix)
+{
+    int n1 = __slice_dim1 matrix;
+    int n2 = __slice_dim2 matrix;
+
+    printf("print_matrix(d/[%d,%d])\n", n1, n2);
+
+    for (int i = 0; i < n1; i++) {
+        for (int j = 0; j != n2; j++) {
+            printf("%5g", matrix[i,j]);
+        }
+        printf("\n");
+    }
+}
+
+int
+main(int argc, char *argv[])
+{
+    const int n1 = 3, n2 = 2;
+    dbl *d, $$matrix;
+
+    d = (dbl *) malloc(n1*n2*sizeof(dbl));
+    for (int i = 0, e = n1*n2; i != e; ++i)
+      d[i] = i;
+
+    print_matrix(d/[n1,n2]);
+    print_matrix(d/[n2,n1]);
+
+    free(d);
+}
+{% endhighlight %}
+    </pre>
+
+    <h2>Syntax</h2>
+
+    <p>Declaration:</p>
+    <pre>
+    complex float $vector;  // 1d slice
+    double $$matrix;        // 2d slice</pre>
+
+    <p></p>
 
     <h2>Contact</h2>
 <p>Mike Nolta (mike@nolta.net)<br/>      </p>
