@@ -3,7 +3,7 @@ title: Cayley
 layout: default
 ---
 
-(Cayley)[http://github.com/nolta/cayley]
+[Cayley](http://github.com/nolta/cayley)
 ========================================
 
 "C + multidimensional pointers"
@@ -59,16 +59,15 @@ Contact
 
 Mike Nolta (mike@nolta.net)
 
-
 Download
 --------
 
 You can download this project in either
-(zip)[http://github.com/nolta/cayley/zipball/master] or
-(tar)[http://github.com/nolta/cayley/tarball/master] formats.
+[zip](http://github.com/nolta/cayley/zipball/master) or
+[tar](http://github.com/nolta/cayley/tarball/master) formats.
 
-You can also clone the project with <a href="http://git-scm.com">Git</a>
+You can also clone the project with [Git](http://git-scm.com)
 by running:
 
-    $ git clone git://github.com/nolta/cayley</pre>
+    $ git clone git://github.com/nolta/cayley
 
