@@ -1333,8 +1333,8 @@ Sema::BuildAnonymousStructUnionMemberReference(const CXXScopeSpec &SS,
     // We've found a member of an anonymous struct/union that is
     // inside a non-anonymous struct/union, so in a well-formed
     // program our base object expression is "this".
-    CXXMethodDecl *method = tryCaptureCXXThis();
-    if (!method) {
+    QualType ThisTy = getAndCaptureCurrentThisType();
+    if (ThisTy.isNull()) {
       Diag(loc, diag::err_invalid_member_use_in_static_method)
         << indirectField->getDeclName();
       return ExprError();
@@ -1342,10 +1342,9 @@ Sema::BuildAnonymousStructUnionMemberReference(const CXXScopeSpec &SS,
 
     // Our base object expression is "this".
     baseObjectExpr =
-      new (Context) CXXThisExpr(loc, method->getThisType(Context),
-                                /*isImplicit=*/ true);
+      new (Context) CXXThisExpr(loc, ThisTy, /*isImplicit=*/ true);
     baseObjectIsPointer = true;
-    baseQuals = Qualifiers::fromCVRMask(method->getTypeQualifiers());
+    baseQuals = ThisTy->castAs<PointerType>()->getPointeeType().getQualifiers();
   }
 
   // Build the implicit member references to the field of the
@@ -1492,13 +1491,22 @@ enum IMAKind {
 /// conservatively answer "yes", in which case some errors will simply
 /// not be caught until template-instantiation.
 static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
+                                            Scope *CurScope,
                                             const LookupResult &R) {
   assert(!R.empty() && (*R.begin())->isCXXClassMember());
 
   DeclContext *DC = SemaRef.getFunctionLevelDeclContext();
+
   bool isStaticContext =
     (!isa<CXXMethodDecl>(DC) ||
      cast<CXXMethodDecl>(DC)->isStatic());
+
+  // C++0x [expr.prim]p4:
+  //   Otherwise, if a member-declarator declares a non-static data member
+  // of a class X, the expression this is a prvalue of type "pointer to X"
+  // within the optional brace-or-equal-initializer.
+  if (CurScope->getFlags() & Scope::ThisScope)
+    isStaticContext = false;
 
   if (R.isUnresolvableResult())
     return isStaticContext ? IMA_Unresolved_StaticContext : IMA_Unresolved;
@@ -1547,8 +1555,11 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
     return IMA_Error_StaticContext;
   }
 
-  CXXRecordDecl *
-        contextClass = cast<CXXMethodDecl>(DC)->getParent()->getCanonicalDecl();
+  CXXRecordDecl *contextClass;
+  if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(DC))
+    contextClass = MD->getParent()->getCanonicalDecl();
+  else
+    contextClass = cast<CXXRecordDecl>(DC);
 
   // [class.mfct.non-static]p3: 
   // ...is used in the body of a non-static member function of class X,
@@ -2026,7 +2037,7 @@ ExprResult
 Sema::BuildPossibleImplicitMemberExpr(const CXXScopeSpec &SS,
                                       LookupResult &R,
                                 const TemplateArgumentListInfo *TemplateArgs) {
-  switch (ClassifyImplicitMemberAccess(*this, R)) {
+  switch (ClassifyImplicitMemberAccess(*this, CurScope, R)) {
   case IMA_Instance:
     return BuildImplicitMemberExpr(SS, R, TemplateArgs, true);
 
@@ -2469,19 +2480,18 @@ Sema::BuildImplicitMemberExpr(const CXXScopeSpec &SS,
   // If this is known to be an instance access, go ahead and build an
   // implicit 'this' expression now.
   // 'this' expression now.
-  CXXMethodDecl *method = tryCaptureCXXThis();
-  assert(method && "didn't correctly pre-flight capture of 'this'");
+  QualType ThisTy = getAndCaptureCurrentThisType();
+  assert(!ThisTy.isNull() && "didn't correctly pre-flight capture of 'this'");
 
-  QualType thisType = method->getThisType(Context);
   Expr *baseExpr = 0; // null signifies implicit access
   if (IsKnownInstance) {
     SourceLocation Loc = R.getNameLoc();
     if (SS.getRange().isValid())
       Loc = SS.getRange().getBegin();
-    baseExpr = new (Context) CXXThisExpr(loc, thisType, /*isImplicit=*/true);
+    baseExpr = new (Context) CXXThisExpr(loc, ThisTy, /*isImplicit=*/true);
   }
 
-  return BuildMemberReferenceExpr(baseExpr, thisType,
+  return BuildMemberReferenceExpr(baseExpr, ThisTy,
                                   /*OpLoc*/ SourceLocation(),
                                   /*IsArrow*/ true,
                                   SS,
@@ -4522,7 +4532,11 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
           if (DiagnoseUseOfDecl(PD, MemberLoc))
             return ExprError();
 
-          return Owned(new (Context) ObjCPropertyRefExpr(PD, PD->getType(),
+          QualType T = PD->getType();
+          if (ObjCMethodDecl *Getter = PD->getGetterMethodDecl())
+            T = getMessageSendResultType(BaseType, Getter, false, false);
+         
+          return Owned(new (Context) ObjCPropertyRefExpr(PD, T,
                                                          VK_LValue,
                                                          OK_ObjCProperty,
                                                          MemberLoc, 
@@ -4540,7 +4554,8 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
           if (Decl *SDecl = FindGetterSetterNameDecl(OPT, /*Property id*/0, 
                                                      SetterSel, Context))
             SMD = dyn_cast<ObjCMethodDecl>(SDecl);
-          QualType PType = OMD->getSendResultType();
+          QualType PType = getMessageSendResultType(BaseType, OMD, false, 
+                                                    false);
           
           ExprValueKind VK = VK_LValue;
           if (!getLangOptions().CPlusPlus &&
@@ -4608,7 +4623,8 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
 
         ExprValueKind VK = VK_LValue;
         if (Getter) {
-          PType = Getter->getSendResultType();
+          PType = getMessageSendResultType(QualType(OT, 0), Getter, true, 
+                                           false);
           if (!getLangOptions().CPlusPlus &&
               IsCForbiddenLValueType(Context, PType))
             VK = VK_RValue;
@@ -8593,20 +8609,31 @@ ExprResult Sema::ConvertPropertyForRValue(Expr *E) {
          E->getObjectKind() == OK_ObjCProperty);
   const ObjCPropertyRefExpr *PRE = E->getObjCProperty();
 
+  QualType T = E->getType();
+  QualType ReceiverType;
+  if (PRE->isObjectReceiver())
+    ReceiverType = PRE->getBase()->getType();
+  else if (PRE->isSuperReceiver())
+    ReceiverType = PRE->getSuperReceiverType();
+  else
+    ReceiverType = Context.getObjCInterfaceType(PRE->getClassReceiver());
+    
   ExprValueKind VK = VK_RValue;
   if (PRE->isImplicitProperty()) {
-    if (const ObjCMethodDecl *GetterMethod = 
+    if (ObjCMethodDecl *GetterMethod = 
           PRE->getImplicitPropertyGetter()) {
-      QualType Result = GetterMethod->getResultType();
-      VK = Expr::getValueKindForType(Result);
+      T = getMessageSendResultType(ReceiverType, GetterMethod, 
+                                   PRE->isClassReceiver(), 
+                                   PRE->isSuperReceiver());
+      VK = Expr::getValueKindForType(GetterMethod->getResultType());
     }
     else {
       Diag(PRE->getLocation(), diag::err_getter_not_found)
             << PRE->getBase()->getType();
     }
   }
-
-  E = ImplicitCastExpr::Create(Context, E->getType(), CK_GetObjCProperty,
+  
+  E = ImplicitCastExpr::Create(Context, T, CK_GetObjCProperty,
                                E, 0, VK);
   
   ExprResult Result = MaybeBindToTemporary(E);
@@ -10105,6 +10132,7 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
     *Complained = false;
 
   // Decode the result (notice that AST's are still created for extensions).
+  bool CheckInferredResultType = false;
   bool isInvalid = false;
   unsigned DiagKind;
   FixItHint Hint;
@@ -10121,6 +10149,8 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
   case IncompatiblePointer:
     MakeObjCStringLiteralFixItHint(*this, DstType, SrcExpr, Hint);
     DiagKind = diag::ext_typecheck_convert_incompatible_pointer;
+    CheckInferredResultType = DstType->isObjCObjectPointerType() &&
+      SrcType->isObjCObjectPointerType();
     break;
   case IncompatiblePointerSign:
     DiagKind = diag::ext_typecheck_convert_incompatible_pointer_sign;
@@ -10202,6 +10232,9 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
 
   Diag(Loc, DiagKind) << FirstType << SecondType << Action
     << SrcExpr->getSourceRange() << Hint;
+  if (CheckInferredResultType)
+    EmitRelatedResultTypeNote(SrcExpr);
+  
   if (Complained)
     *Complained = true;
   return isInvalid;

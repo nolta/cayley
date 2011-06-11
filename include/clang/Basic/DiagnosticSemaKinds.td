@@ -589,6 +589,8 @@ def warn_missing_exception_specification : Warning<
   "%0 is missing exception specification '%1'">;
 def err_noexcept_needs_constant_expression : Error<
   "argument to noexcept specifier must be a constant expression">;
+def err_exception_spec_unknown : Error<
+  "exception specification is not available until end of class definition">;
 
 // C++ access checking
 def err_class_redeclared_with_different_access : Error<
@@ -973,8 +975,8 @@ def err_illegal_decl_array_of_auto : Error<
 def err_new_array_of_auto : Error<
   "cannot allocate array of 'auto'">;
 def err_auto_not_allowed : Error<
-  "'auto' not allowed %select{in function prototype|in struct member"
-  "|in union member|in class member|in exception declaration"
+  "'auto' not allowed %select{in function prototype|in non-static struct member"
+  "|in non-static union member|in non-static class member|in exception declaration"
   "|in template parameter|in block literal|in template argument"
   "|in typedef|in type alias|in function return type|here}0">;
 def err_auto_var_requires_init : Error<
@@ -4118,6 +4120,23 @@ def err_invalid_astype_of_different_size : Error<
   "invalid reinterpretation: sizes of %0 and %1 must match">;
 
 } // end of sema category
+
+let CategoryName = "Related Result Type Issue" in {
+// Objective-C related result type compatibility
+def warn_related_result_type_compatibility_class : Warning<
+  "method is expected to return an instance of its class type %0, but "
+  "is declared to return %1">;
+def warn_related_result_type_compatibility_protocol : Warning<
+  "protocol method is expected to return an instance of the implementing "
+  "class, but is declared to return %0">;
+def note_related_result_type_overridden : Note<
+  "overridden method is part of the '%select{|alloc|copy|init|mutableCopy|"
+  "new|autorelease|dealloc|release|retain|retainCount|self}0' method family">;
+def note_related_result_type_inferred : Note<
+  "%select{class|instance}0 method %1 is assumed to return an instance of "
+  "its receiver type (%2)">;
+
+}
 
 } // end of sema component.
 
