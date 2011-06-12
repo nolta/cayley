@@ -2621,6 +2621,10 @@ def err_subscript_function_type : Error<
   "subscript of pointer to function type %0">;
 def err_subscript_incomplete_type : Error<
   "subscript of pointer to incomplete type %0">;
+def err_typecheck_subscripts_value : Error<
+  "multi-subscripted value is not a slice">;
+def err_subscripts_wrong_number : Error<
+  "number of subscripts does not match dimension of slice">;
 def err_typecheck_member_reference_struct_union : Error<
   "member reference base type %0 is not a structure or union">;
 def err_typecheck_member_reference_ivar : Error<

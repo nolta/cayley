@@ -3577,11 +3577,14 @@ Sema::ActOnArraySubscriptsExpr(Scope *S, Expr *Base, SourceLocation LLoc,
   LHSExp = Result.take();
 
   if (!LHSExp->getType()->isSliceType())
-    // FIXME
-    return ExprError(Diag(LLoc, diag::err_typecheck_subscript_value)
+    return ExprError(Diag(LLoc, diag::err_typecheck_subscripts_value)
        << LHSExp->getSourceRange()); // << RHSExp->getSourceRange());
 
   const SliceType *STy = LHSExp->getType()->getAs<SliceType>();
+
+  if (STy->getNumDims() != NumArgs)
+    return ExprError(Diag(LLoc, diag::err_subscripts_wrong_number)
+       << LHSExp->getSourceRange());
 
   //QualType LHSTy = LHSExp->getType(), RHSTy = RHSExp->getType();
   Expr *BaseExpr, *IndexExpr;
