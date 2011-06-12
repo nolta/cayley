@@ -1418,7 +1418,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
   // is specified, or -std is set to a conforming mode.
   Opts.Trigraphs = !Opts.GNUMode;
 
-  Opts.DollarIdents = !Opts.AsmPreprocessor || !Opts.Cayley;
+  Opts.DollarIdents = !Opts.AsmPreprocessor && !Opts.Cayley;
 }
 
 static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,

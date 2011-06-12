@@ -1673,6 +1673,7 @@ public:
       case DeclaratorChunk::Reference:
       case DeclaratorChunk::BlockPointer:
       case DeclaratorChunk::MemberPointer:
+      case DeclaratorChunk::Slice:
         return false;
       case DeclaratorChunk::Array:
         return !DeclTypeInfo[i].Arr.NumElts;
