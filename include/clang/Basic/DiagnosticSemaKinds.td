@@ -2621,10 +2621,6 @@ def err_subscript_function_type : Error<
   "subscript of pointer to function type %0">;
 def err_subscript_incomplete_type : Error<
   "subscript of pointer to incomplete type %0">;
-def err_typecheck_subscripts_value : Error<
-  "multi-subscripted value is not a slice">;
-def err_subscripts_wrong_number : Error<
-  "number of subscripts does not match dimension of slice">;
 def err_typecheck_member_reference_struct_union : Error<
   "member reference base type %0 is not a structure or union">;
 def err_typecheck_member_reference_ivar : Error<
@@ -4120,6 +4116,14 @@ def err_filter_expression_integral : Error<
 // OpenCL warnings and errors.
 def err_invalid_astype_of_different_size : Error<
   "invalid reinterpretation: sizes of %0 and %1 must match">;
+
+// Cayley warnings and errors.
+def err_typecheck_subscripts_value : Error<
+  "multi-subscripted value is not a slice">;
+def err_subscripts_wrong_number : Error<
+  "number of subscripts does not match dimension of slice">;
+def err_typecheck_slice_value : Error<
+  "sliced value is not a pointer">;
 
 } // end of sema category
 

@@ -3675,8 +3675,7 @@ Sema::ActOnSliceExpr(Scope *S, Expr *Base, SourceLocation LLoc,
   LHSExp = Result.take();
 
   if (!LHSExp->getType()->isPointerType())
-    // FIXME
-    return ExprError(Diag(LLoc, diag::err_typecheck_subscript_value)
+    return ExprError(Diag(LLoc, diag::err_typecheck_slice_value)
        << LHSExp->getSourceRange()); // << RHSExp->getSourceRange());
 
   const PointerType *PTy = LHSExp->getType()->getAs<PointerType>();
