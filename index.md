@@ -6,12 +6,29 @@ layout: default
 [Cayley](http://github.com/nolta/cayley)
 ========================================
 
-"C + multidimensional pointers"
+Cayley is an experimental superset of the C language.
+
+Slices, a.k.a. multidimensional pointers
+----------------------------------------
+
+Slices are declared much like pointers:
+
+    complex float $vector;  // 1d slice
+    double $$matrix;        // 2d slice
+
+but allow for multiple indicies:
+
+    c = vector[k];
+    d = matrix[i,j];
 
 Example
 -------
 
 {% highlight c %}
+//
+// slice.cy
+//
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -48,13 +65,15 @@ main(int argc, char *argv[])
 }
 {% endhighlight %}
 
-Syntax
-------
+Output:
 
-Declaration:
-
-    complex float $vector;  // 1d slice
-    double $$matrix;        // 2d slice
+    print_matrix(d/[3,2])
+        0    1
+        2    3
+        4    5
+    print_matrix(d/[2,3])
+        0    1    2
+        3    4    5
 
 Contact
 -------
@@ -63,13 +82,6 @@ Mike Nolta (mike@nolta.net)
 
 Download
 --------
-
-You can download this project in either
-[zip](http://github.com/nolta/cayley/zipball/master) or
-[tar](http://github.com/nolta/cayley/tarball/master) formats.
-
-You can also clone the project with [Git](http://git-scm.com)
-by running:
 
     $ git clone git://github.com/nolta/cayley
 
