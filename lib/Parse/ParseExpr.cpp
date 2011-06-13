@@ -1205,7 +1205,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         MatchRHSPunctuation(tok::r_square, Loc);
 
       } else {
-        // Cayley allows for multicies
+        // Cayley allows for multiple indicies
         ExprVector ArgExprs(Actions);
         CommaLocsTy CommaLocs;
       
