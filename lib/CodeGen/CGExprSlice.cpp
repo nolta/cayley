@@ -256,82 +256,46 @@ public:
 /// load the real and imaginary pieces, returning them as Real/Imag.
 SlicePairTy SliceExprEmitter::EmitLoadOfSlice(llvm::Value *SrcPtr,
                                               bool isVolatile) {
-    /*
-  llvm::Value *Ptr = 0;
-  llvm::SmallVector<llvm::Value *, 8> Strides;
+  llvm::Value *A=0, *B=0;
 
   if (!IgnorePointer || isVolatile) {
-    llvm::Value *V = Builder.CreateStructGEP(SrcPtr, 0,
-                                             SrcPtr->getName() + ".0p");
-    Ptr = Builder.CreateLoad(V, isVolatile, SrcPtr->getName() + ".0");
+    llvm::Value *AP = Builder.CreateStructGEP(SrcPtr, 0,
+                                              SrcPtr->getName() + ".ap");
+    A = Builder.CreateLoad(AP, isVolatile, SrcPtr->getName() + ".a");
   }
 
   if (!IgnoreDims || isVolatile) {
-    llvm::StructType *StructP = cast<llvm::StructType>(SrcPtr);
-    for (unsigned i = 1, e = StructP->getNumElements(); i != e; ++i) {
-      llvm::Value *V = Builder.CreateStructGEP(SrcPtr, i,
-                                               SrcPtr->getName() + ".ip");
-      V = Builder.CreateLoad(A, isVolatile, SrcPtr->getName() + ".i");
-      Strides.push_back(V);
-    }
+    B = Builder.CreateStructGEP(SrcPtr, 1, SrcPtr->getName() + ".bp");
   }
 
-  return SlicePairTy(Ptr, Strides);
-  */
-
-  llvm::Value *Real=0, *Imag=0;
-
-  if (!IgnorePointer || isVolatile) {
-    llvm::Value *RealP = Builder.CreateStructGEP(SrcPtr, 0,
-                                                 SrcPtr->getName() + ".pp");
-    Real = Builder.CreateLoad(RealP, isVolatile, SrcPtr->getName() + ".p");
-  }
-
-  /*
-  if (!IgnoreDims || isVolatile) {
-    llvm::Value *ArrayP = Builder.CreateStructGEP(SrcPtr, 1,
-                                                 SrcPtr->getName() + ".op");
-    unsigned NumDims = cast<llvm::ArrayType>(
-                         cast<llvm::PointerType>(ArrayP->getType())
-                         ->getElementType())
-                       ->getNumElements();
-    std::vector<llvm::Value *> Dims();
-  }
-  */
-
-  if (!IgnoreDims || isVolatile) {
-    llvm::Value *ImagP = Builder.CreateStructGEP(SrcPtr, 1,
-                                                 SrcPtr->getName() + ".op");
-    //Imag = Builder.CreateLoad(ImagP, isVolatile, SrcPtr->getName() + ".o");
-    Imag = ImagP;
-  }
-
-  return SlicePairTy(Real, Imag);
+  return SlicePairTy(A, B);
 }
 
-/// EmitStoreOfSlice - Store the specified real/imag parts into the
+/// EmitStoreOfSlice - Store the specified parts into the
 /// specified value pointer.
-void SliceExprEmitter::EmitStoreOfSlice(SlicePairTy Val, llvm::Value *Ptr,
+void SliceExprEmitter::EmitStoreOfSlice(SlicePairTy Val, llvm::Value *DestPtr,
                                         bool isVolatile) {
-  llvm::Value *RealPtr = Builder.CreateStructGEP(Ptr, 0, "p");
-  llvm::Value *ImagPtr = Builder.CreateStructGEP(Ptr, 1, "o");
+  llvm::Value *APtr = Builder.CreateStructGEP(DestPtr, 0,
+                                              DestPtr->getName() + ".a.ptr");
+  llvm::Value *BPtr = Builder.CreateStructGEP(DestPtr, 1,
+                                              DestPtr->getName() + ".b.ptr");
 
-  llvm::errs() << "start of emitstoreofslice\n";
-  Val.first->dump();
-  RealPtr->dump();
-  Builder.CreateStore(Val.first, RealPtr, isVolatile);
-  Val.second->dump();
-  ImagPtr->dump();
-  Val.second->getType()->dump();
-  ImagPtr->getType()->dump();
-  if (Val.second->getType() == ImagPtr->getType()) {
-    uint64_t Size = 4*4; //ImagPtr->getType()->getPrimitiveSizeInBits()/8;
-    llvm::errs() << "size = " << Size << "\n";
-    unsigned Align = 8; //FIXME
-    Builder.CreateMemCpy(ImagPtr, Val.second, Size, Align, isVolatile);
+  Builder.CreateStore(Val.first, APtr, isVolatile);
+
+  if (Val.second->getType() == BPtr->getType()) {
+    unsigned NumElements = cast<llvm::ArrayType>(
+                             cast<llvm::PointerType>(Val.second->getType())
+                             ->getElementType())
+                           ->getNumElements();
+
+    for (unsigned i = 0; i != NumElements; ++i) {
+      llvm::Value *Addr = Builder.CreateStructGEP(Val.second, i);
+      llvm::Value *I = Builder.CreateLoad(Addr, isVolatile); // FIXME: isVolatile only refers to Dest
+      Addr = Builder.CreateStructGEP(BPtr, i);
+      Builder.CreateStore(I, Addr, isVolatile);
+    }
   } else
-    Builder.CreateStore(Val.second, ImagPtr, isVolatile);
-  llvm::errs() << "end of emitstoreofslice\n";
+    Builder.CreateStore(Val.second, BPtr, isVolatile);
 }
 
 //===----------------------------------------------------------------------===//
@@ -391,7 +355,6 @@ SlicePairTy SliceExprEmitter::VisitSliceExpr(const SliceExpr *E) {
                                       SliceTy->getArrayIdxOfStride(i),
                                       "slice.arr.idx");
     Builder.CreateStore(ReverseStrides[j], Address);
-    ReverseStrides[j]->dump();
   }
   
   // fill array with dimensions
@@ -400,7 +363,6 @@ SlicePairTy SliceExprEmitter::VisitSliceExpr(const SliceExpr *E) {
                                       SliceTy->getArrayIdxOfDim(i),
                                       "slice.arr.idx");
     Builder.CreateStore(Dims[i], Address);
-    Dims[i]->dump();
   }
 
   return SlicePairTy(DataPtr, ArrayTmp);
