@@ -1067,6 +1067,11 @@ QualType Sema::BuildSliceType(QualType T, unsigned NumDims,
 
   assert(!T->isObjCObjectType() && "Should build ObjCObjectPointerType");
 
+  if (NumDims > 7) {
+    Diag(Loc, diag::err_slice_rank_overflow);
+    return QualType();
+  }
+
   // Build the slice type.
   return Context.getSliceType(T, NumDims);
 }

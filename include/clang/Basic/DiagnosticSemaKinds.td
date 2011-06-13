@@ -4127,6 +4127,8 @@ def err_subscripts_wrong_number : Error<
   "number of subscripts does not match dimension of slice">;
 def err_typecheck_slice_value : Error<
   "sliced value is not a pointer">;
+def err_slice_rank_overflow : Error<
+  "slice rank cannot exceed 7">;
 
 } // end of sema category
 

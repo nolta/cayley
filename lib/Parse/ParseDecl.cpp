@@ -3234,10 +3234,14 @@ void Parser::ParseDeclarator(Declarator &D) {
 /// [C]     pointer[opt] direct-declarator
 /// [C++]   direct-declarator
 /// [C++]   ptr-operator declarator
+/// [Cay]   slice-rank direct-declarator
 ///
 ///       pointer: [C99 6.7.5]
 ///         '*' type-qualifier-list[opt]
 ///         '*' type-qualifier-list[opt] pointer
+///
+///       slice-rank: one of [Cayley]
+///         '$' '$$' '$$$' ... '$$$$$$$'
 ///
 ///       ptr-operator:
 ///         '*' cv-qualifier-seq[opt]
