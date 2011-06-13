@@ -2457,10 +2457,8 @@ private:
     case CK_FunctionToPointerDecay:
     case CK_NullToMemberPointer:
     case CK_NullToPointer:
-    case CK_NullToSlice:
     case CK_ConstructorConversion:
     case CK_IntegralToPointer:
-    case CK_IntegralToSlice:
     case CK_PointerToIntegral:
     case CK_SliceToIntegral:
     case CK_ToVoid:
@@ -2470,7 +2468,6 @@ private:
     case CK_FloatingToIntegral:
     case CK_FloatingCast:
     case CK_SliceToPointer:
-    case CK_PointerToSlice:
     case CK_SliceCast:
     case CK_AnyPointerToObjCPointerCast:
     case CK_AnyPointerToBlockPointerCast:

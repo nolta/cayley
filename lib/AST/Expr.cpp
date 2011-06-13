@@ -1091,8 +1091,6 @@ const char *CastExpr::getCastKindName() const {
     return "NullToMemberPointer";
   case CK_NullToPointer:
     return "NullToPointer";
-  case CK_NullToSlice:
-    return "NullToSlice";
   case CK_BaseToDerivedMemberPointer:
     return "BaseToDerivedMemberPointer";
   case CK_DerivedToBaseMemberPointer:
@@ -1107,8 +1105,6 @@ const char *CastExpr::getCastKindName() const {
     return "PointerToIntegral";
   case CK_PointerToBoolean:
     return "PointerToBoolean";
-  case CK_PointerToSlice:
-    return "PointerToSlice";
   case CK_ToVoid:
     return "ToVoid";
   case CK_VectorSplat:
@@ -1119,8 +1115,6 @@ const char *CastExpr::getCastKindName() const {
     return "IntegralToBoolean";
   case CK_IntegralToFloating:
     return "IntegralToFloating";
-  case CK_IntegralToSlice:
-    return "IntegralToSlice";
   case CK_FloatingToIntegral:
     return "FloatingToIntegral";
   case CK_FloatingCast:

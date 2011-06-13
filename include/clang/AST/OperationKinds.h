@@ -247,9 +247,6 @@ enum CastKind {
   ///   _Complex unsigned -> _Complex float
   CK_IntegralComplexToFloatingComplex,
 
-  CK_IntegralToSlice,
-  CK_NullToSlice,
-  CK_PointerToSlice,
   CK_SliceCast,
   CK_SliceToBoolean,
   CK_SliceToIntegral,

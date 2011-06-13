@@ -1967,7 +1967,6 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   case CK_IntegralComplexCast:
   case CK_IntegralComplexToFloatingComplex:
   case CK_SliceCast:
-  case CK_PointerToSlice:
   case CK_SliceToPointer:
   case CK_DerivedToBaseMemberPointer:
   case CK_BaseToDerivedMemberPointer:

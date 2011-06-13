@@ -487,6 +487,7 @@ SlicePairTy SliceExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
   case CK_LValueToRValue:
     return Visit(Op);
 
+#if 0
   case CK_IntegralToSlice:
   case CK_PointerToSlice: {
     assert(Op->getType()->isPointerType() && "not ptr->slice?");
@@ -507,6 +508,7 @@ SlicePairTy SliceExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
 
     return SlicePairTy(Ptr, Array);
   }
+#endif
 
   case CK_SliceCast:
     return EmitSliceToSliceCast(Visit(Op), Op->getType(), DestTy);

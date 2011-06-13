@@ -340,7 +340,6 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_IntegralComplexCast:
   case CK_IntegralComplexToFloatingComplex:
   case CK_SliceCast:
-  case CK_PointerToSlice:
   case CK_SliceToPointer:
     llvm_unreachable("cast kind invalid for aggregate types");
   }

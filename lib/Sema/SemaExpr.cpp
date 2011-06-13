@@ -5508,12 +5508,6 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
     case Type::STK_Integral:
       return CK_PointerToIntegral;
     case Type::STK_Slice:
-      /*
-      Src = S.ImpCastExprToType(Src.take(),
-                                DestTy->getAs<SliceType>()->getPointeeType(),
-                                CK_BitCast);
-                                */
-      return CK_PointerToSlice;
     case Type::STK_Floating:
     case Type::STK_FloatingComplex:
     case Type::STK_IntegralComplex:
@@ -5552,10 +5546,6 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
       if (Src.get()->isNullPointerConstant(S.Context, Expr::NPC_ValueDependentIsNull))
         return CK_NullToPointer;
       return CK_IntegralToPointer;
-    case Type::STK_Slice:
-      if (Src.get()->isNullPointerConstant(S.Context, Expr::NPC_ValueDependentIsNull))
-        return CK_NullToSlice;
-      return CK_IntegralToSlice;
     case Type::STK_Bool:
       return CK_IntegralToBoolean;
     case Type::STK_Integral:
@@ -5570,6 +5560,8 @@ static CastKind PrepareScalarCast(Sema &S, ExprResult &Src, QualType DestTy) {
       Src = S.ImpCastExprToType(Src.take(), DestTy->getAs<ComplexType>()->getElementType(),
                                 CK_IntegralToFloating);
       return CK_FloatingRealToComplex;
+    case Type::STK_Slice:
+      llvm_unreachable("illegal cast to slice");
     case Type::STK_MemberPointer:
       llvm_unreachable("member pointer type in C");
     }
@@ -7051,12 +7043,6 @@ Sema::CheckAssignmentConstraints(QualType lhsType, ExprResult &rhs,
     if (lhsType->isIntegerType()) {
       Kind = CK_PointerToIntegral;
       return PointerToInt;
-    }
-
-    // T* -> U$
-    if (lhsType->isSliceType()) {
-      Kind = CK_PointerToSlice;
-      return Compatible;
     }
 
     return Incompatible;

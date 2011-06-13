@@ -1237,9 +1237,6 @@ Value *ScalarExprEmitter::EmitCastExpr(CastExpr *CE) {
     return EmitComplexToScalarConversion(V, E->getType(), DestTy);
   }
 
-  case CK_IntegralToSlice:
-  case CK_NullToSlice:
-  case CK_PointerToSlice:
   case CK_SliceCast:
     llvm_unreachable("scalar cast to non-scalar value");
     break;
