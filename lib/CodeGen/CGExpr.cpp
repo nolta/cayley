@@ -1554,12 +1554,6 @@ LValue CodeGenFunction::EmitArraySubscriptsExpr(const ArraySubscriptsExpr *E) {
   assert(E->getBase()->getType()->isSliceType() && "not a slice");
   const SliceType *ST = E->getBase()->getType()->getAs<SliceType>();
   SlicePairTy Slice = EmitSliceExpr(E->getBase());
-  /*
-  Slice.first->dump();
-  Slice.second->dump();
-  Slice.first->getType()->dump();
-  Slice.second->getType()->dump();
-  */
 
   llvm::Value *Address = 0, *TotalIdx = 0;
   unsigned ArrayAlignment = 0;
@@ -1575,11 +1569,6 @@ LValue CodeGenFunction::EmitArraySubscriptsExpr(const ArraySubscriptsExpr *E) {
     if (Idx->getType() != IntPtrTy)
       Idx = Builder.CreateIntCast(Idx, IntPtrTy, IdxSigned, "idxprom");
 
-    /*
-    Idx->dump();
-    Idx->getType()->dump();
-    */
-
     // multiply by stride
     llvm::Value *Args[] = { llvm::ConstantInt::get(Int32Ty,0),
                             llvm::ConstantInt::get(Int32Ty,i) };
@@ -1588,20 +1577,14 @@ LValue CodeGenFunction::EmitArraySubscriptsExpr(const ArraySubscriptsExpr *E) {
     Address = Builder.CreateGEP(Slice.second, llvm::ConstantInt::get(Int32Ty,i),
                                 "sli.stridep");
                                 */
-    //Address->dump();
     llvm::Value *Stride = Builder.CreateLoad(Address, "tmp");
-    //Stride->dump();
-    //Stride->getType()->dump();
     if (Stride->getType() != Idx->getType())
       Stride = Builder.CreateIntCast(Stride, Idx->getType(), IdxSigned, "idxprom");
     Idx = Builder.CreateMul(Idx, Stride);
-    //Idx->dump();
 
     // accumulate
     TotalIdx = (i ? Builder.CreateAdd(TotalIdx, Idx) : Idx);
-    //TotalIdx->dump();
   }
-  //TotalIdx->dump();
 
   llvm::Value *Base = Slice.first;
   if (getContext().getLangOptions().isSignedOverflowDefined())
