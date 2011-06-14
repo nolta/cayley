@@ -48,6 +48,8 @@ def err_vla_decl_has_static_storage : Error<
   "variable length array declaration can not have 'static' storage duration">;
 def err_vla_decl_has_extern_linkage : Error<
   "variable length array declaration can not have 'extern' linkage">;
+def ext_vla_folded_to_constant : Extension<
+  "variable length array folded to constant array as an extension">;
 
 // C99 variably modified types
 def err_variably_modified_template_arg : Error<
@@ -267,6 +269,9 @@ def warn_dyn_class_memaccess : Warning<
   InGroup<DiagGroup<"dynamic-class-memaccess">>;
 def note_bad_memaccess_silence : Note<
   "explicitly cast the pointer to silence this warning">;
+def warn_sizeof_pointer : Warning<
+  "the argument to sizeof is pointer type %0, expected %1 to match "
+  "%select{first|second}2 argument to %3">;
 
 /// main()
 // static/inline main() are not errors in C, just in C++.
@@ -2178,7 +2183,7 @@ def err_undeclared_var_use : Error<"use of undeclared identifier %0">;
 def note_dependent_var_use : Note<"must qualify identifier to find this "
     "declaration in dependent base class">;
 def err_not_found_by_two_phase_lookup : Error<"call to function %0 that is neither "
-    "visible in the template definition nor found by argument dependent lookup">;
+    "visible in the template definition nor found by argument-dependent lookup">;
 def note_not_found_by_two_phase_lookup : Note<"%0 should be declared prior to the "
     "call site%select{| or in %2| or in an associated namespace of one of its arguments}1">;
 def err_undeclared_use : Error<"use of undeclared %0">;
@@ -3542,6 +3547,9 @@ def ext_in_class_initializer_float_type : ExtWarn<
 def err_in_class_initializer_non_constant : Error<
   "in-class initializer is not a constant expression">;
 
+def ext_in_class_initializer_non_constant : Extension<
+ "in-class initializer is not a constant expression, accepted as an extension">;
+
 // C++ anonymous unions and GNU anonymous structs/unions
 def ext_anonymous_union : Extension<
   "anonymous unions are a GNU extension in C">, InGroup<GNU>;
@@ -3929,12 +3937,17 @@ def err_switch_incomplete_class_type : Error<
   "switch condition has incomplete class type %0">;
 def warn_empty_if_body : Warning<
   "if statement has empty body">, InGroup<EmptyBody>;
+
 def err_va_start_used_in_non_variadic_function : Error<
   "'va_start' used in function with fixed args">;
 def warn_second_parameter_of_va_start_not_last_named_argument : Warning<
   "second parameter of 'va_start' not last named argument">;
 def err_first_argument_to_va_arg_not_of_type_va_list : Error<
   "first argument to 'va_arg' is of type %0 and not 'va_list'">;
+def err_second_parameter_to_va_arg_incomplete: Error<
+  "second argument to 'va_arg' is of incomplete type %0">;
+def err_second_parameter_to_va_arg_abstract: Error<
+  "second argument to 'va_arg' is of abstract type %0">;
 def warn_second_parameter_to_va_arg_not_pod : Warning<
   "second argument to 'va_arg' is of non-POD type %0">,
   InGroup<DiagGroup<"non-pod-varargs">>, DefaultError;
