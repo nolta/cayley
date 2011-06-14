@@ -19,6 +19,7 @@ set(CLANG_TEST_DIRECTORIES
   "Preprocessor"
   "Rewriter"
   "Sema"
+  "SemaCayley"
   "SemaCUDA"
   "SemaCXX"
   "SemaObjC"
