@@ -31,9 +31,11 @@ using namespace clang;
 ///
 /// Called type-id in C++.
 TypeResult Parser::ParseTypeName(SourceRange *Range,
-                                 Declarator::TheContext Context) {
+                                 Declarator::TheContext Context,
+                                 ObjCDeclSpec *objcQuals) {
   // Parse the common declaration-specifiers piece.
   DeclSpec DS(AttrFactory);
+  DS.setObjCQualifiers(objcQuals);
   ParseSpecifierQualifierList(DS);
 
   // Parse the abstract-declarator, if present.
@@ -3025,6 +3027,10 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
 
     // GNU attributes.
   case tok::kw___attribute:
+    return true;
+
+    // C++0x decltype.
+  case tok::kw_decltype:
     return true;
 
     // GNU ObjC bizarre protocol extension: <proto1,proto2> with implicit 'id'.

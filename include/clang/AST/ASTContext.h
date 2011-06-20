@@ -998,6 +998,18 @@ public:
     return getExtQualType(T, Qs);
   }
 
+  /// getLifetimeQualifiedType - Returns a type with the given
+  /// lifetime qualifier.
+  QualType getLifetimeQualifiedType(QualType type,
+                                    Qualifiers::ObjCLifetime lifetime) {
+    assert(type.getObjCLifetime() == Qualifiers::OCL_None);
+    assert(lifetime != Qualifiers::OCL_None);
+
+    Qualifiers qs;
+    qs.addObjCLifetime(lifetime);
+    return getQualifiedType(type, qs);
+  }
+
   DeclarationNameInfo getNameForTemplate(TemplateName Name,
                                          SourceLocation NameLoc) const;
 
@@ -1049,7 +1061,9 @@ public:
 
   /// isObjCNSObjectType - Return true if this is an NSObject object with
   /// its NSObject attribute set.
-  bool isObjCNSObjectType(QualType Ty) const;
+  static bool isObjCNSObjectType(QualType Ty) {
+    return Ty->isObjCNSObjectType();
+  }
 
   //===--------------------------------------------------------------------===//
   //                         Type Sizing and Analysis

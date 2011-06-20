@@ -151,6 +151,9 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::ObjCForCollectionStmtClass:
     EmitObjCForCollectionStmt(cast<ObjCForCollectionStmt>(*S));
     break;
+  case Stmt::ObjCAutoreleasePoolStmtClass:
+    EmitObjCAutoreleasePoolStmt(cast<ObjCAutoreleasePoolStmt>(*S));
+    break;
       
   case Stmt::CXXTryStmtClass:
     EmitCXXTryStmt(cast<CXXTryStmt>(*S));
@@ -769,7 +772,7 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   } else if (RV->getType()->isSliceType()) {
     EmitSliceExprIntoAddr(RV, ReturnValue, false);
   } else {
-    EmitAggExpr(RV, AggValueSlot::forAddr(ReturnValue, false, true));
+    EmitAggExpr(RV, AggValueSlot::forAddr(ReturnValue, Qualifiers(), true));
   }
 
   EmitBranchThroughCleanup(ReturnBlock);
@@ -1280,8 +1283,11 @@ AddVariableConstraints(const std::string &Constraint, const Expr &AsmExpr,
     return Constraint;
   llvm::StringRef Register = Attr->getLabel();
   assert(Target.isValidGCCRegisterName(Register));
-  // FIXME: We should check which registers are compatible with "r" or "x".
-  if (Constraint != "r" && Constraint != "x") {
+  // We're using validateOutputConstraint here because we only care if
+  // this is a register constraint.
+  TargetInfo::ConstraintInfo Info(Constraint, "");
+  if (Target.validateOutputConstraint(Info) &&
+      !Info.allowsRegister()) {
     CGM.ErrorUnsupported(&Stmt, "__asm__");
     return Constraint;
   }

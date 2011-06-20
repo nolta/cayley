@@ -1799,7 +1799,12 @@ ExprResult Parser::ParseBuiltinPrimaryExpression() {
 ///         '(' type-name ')' '{' initializer-list ',' '}'
 ///       cast-expression: [C99 6.5.4]
 ///         '(' type-name ')' cast-expression
-///
+/// [ARC]   bridged-cast-expression
+/// 
+/// [ARC] bridged-cast-expression:
+///         (__bridge type-name) cast-expression
+///         (__bridge_transfer type-name) cast-expression
+///         (__bridge_retained type-name) cast-expression
 ExprResult
 Parser::ParseParenExpression(ParenParseOption &ExprType, bool stopIfCastExpr,
                              ParsedType TypeOfCast, ParsedType &CastTy,
@@ -1831,7 +1836,43 @@ Parser::ParseParenExpression(ParenParseOption &ExprType, bool stopIfCastExpr,
     // If the substmt parsed correctly, build the AST node.
     if (!Stmt.isInvalid())
       Result = Actions.ActOnStmtExpr(OpenLoc, Stmt.take(), Tok.getLocation());
+  } else if (ExprType >= CompoundLiteral && 
+             (Tok.is(tok::kw___bridge) || 
+              Tok.is(tok::kw___bridge_transfer) ||
+              Tok.is(tok::kw___bridge_retained) ||
+              Tok.is(tok::kw___bridge_retain))) {
+    tok::TokenKind tokenKind = Tok.getKind();
+    SourceLocation BridgeKeywordLoc = ConsumeToken();
 
+    // Parse an Objective-C ARC ownership cast expression.
+    ObjCBridgeCastKind Kind;
+    if (tokenKind == tok::kw___bridge)
+      Kind = OBC_Bridge;
+    else if (tokenKind == tok::kw___bridge_transfer)
+      Kind = OBC_BridgeTransfer;
+    else if (tokenKind == tok::kw___bridge_retained)
+      Kind = OBC_BridgeRetained;
+    else {
+      // As a hopefully temporary workaround, allow __bridge_retain as
+      // a synonym for __bridge_retained, but only in system headers.
+      assert(tokenKind == tok::kw___bridge_retain);
+      Kind = OBC_BridgeRetained;
+      if (!PP.getSourceManager().isInSystemHeader(BridgeKeywordLoc))
+        Diag(BridgeKeywordLoc, diag::err_arc_bridge_retain)
+          << FixItHint::CreateReplacement(BridgeKeywordLoc,
+                                          "__bridge_retained");
+    }
+             
+    TypeResult Ty = ParseTypeName();
+    SourceLocation RParenLoc = MatchRHSPunctuation(tok::r_paren, OpenLoc);
+    ExprResult SubExpr = ParseCastExpression(false, false, ParsedType());
+    
+    if (Ty.isInvalid() || SubExpr.isInvalid())
+      return ExprError();
+    
+    return Actions.ActOnObjCBridgedCast(getCurScope(), OpenLoc, Kind,
+                                        BridgeKeywordLoc, Ty.get(),
+                                        RParenLoc, SubExpr.get());
   } else if (ExprType >= CompoundLiteral &&
              isTypeIdInParens(isAmbiguousTypeId)) {
 

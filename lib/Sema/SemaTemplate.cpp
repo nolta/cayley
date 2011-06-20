@@ -2357,8 +2357,20 @@ bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
     return true;
 
   // Add the converted template type argument.
-  Converted.push_back(
-                 TemplateArgument(Context.getCanonicalType(Arg.getAsType())));
+  QualType ArgType = Context.getCanonicalType(Arg.getAsType());
+  
+  // Objective-C ARC:
+  //   If an explicitly-specified template argument type is a lifetime type
+  //   with no lifetime qualifier, the __strong lifetime qualifier is inferred.
+  if (getLangOptions().ObjCAutoRefCount &&
+      ArgType->isObjCLifetimeType() &&
+      !ArgType.getObjCLifetime()) {
+    Qualifiers Qs;
+    Qs.setObjCLifetime(Qualifiers::OCL_Strong);
+    ArgType = Context.getQualifiedType(ArgType, Qs);
+  }
+  
+  Converted.push_back(TemplateArgument(ArgType));
   return false;
 }
 
@@ -2911,16 +2923,6 @@ bool Sema::CheckTemplateArgumentList(TemplateDecl *Template,
     // If we have a template parameter pack with no more corresponding
     // arguments, just break out now and we'll fill in the argument pack below.
     if ((*Param)->isTemplateParameterPack())
-      break;
-
-    // If our template is a template template parameter that hasn't acquired
-    // its proper context yet (e.g., because we're using the template template
-    // parameter in the signature of a function template, before we've built
-    // the function template itself), don't attempt substitution of default
-    // template arguments at this point: we don't have enough context to
-    // do it properly.
-    if (isTemplateTemplateParameter && 
-        Template->getDeclContext()->isTranslationUnit())
       break;
     
     // We have a default template argument that we will use.
@@ -3517,9 +3519,11 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
     return true;
   }
 
+  bool ObjCLifetimeConversion;
   if (ParamType->isPointerType() &&
       !ParamType->getAs<PointerType>()->getPointeeType()->isFunctionType() &&
-      S.IsQualificationConversion(ArgType, ParamType, false)) {
+      S.IsQualificationConversion(ArgType, ParamType, false, 
+                                  ObjCLifetimeConversion)) {
     // For pointer-to-object types, qualification conversions are
     // permitted.
   } else {
@@ -3879,8 +3883,9 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       return Owned(Arg);
     }
 
+    bool ObjCLifetimeConversion;
     if (IsQualificationConversion(ArgType, ParamType.getNonReferenceType(),
-                                  false)) {
+                                  false, ObjCLifetimeConversion)) {
       Arg = ImpCastExprToType(Arg, ParamType, CK_NoOp, CastCategory(Arg)).take();
     } else if (!Context.hasSameUnqualifiedType(ArgType,
                                            ParamType.getNonReferenceType())) {
@@ -3947,9 +3952,11 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   //        member, qualification conversions (4.4) are applied.
   assert(ParamType->isMemberPointerType() && "Only pointers to members remain");
 
+  bool ObjCLifetimeConversion;
   if (Context.hasSameUnqualifiedType(ParamType, ArgType)) {
     // Types match exactly: nothing more to do here.
-  } else if (IsQualificationConversion(ArgType, ParamType, false)) {
+  } else if (IsQualificationConversion(ArgType, ParamType, false, 
+                                       ObjCLifetimeConversion)) {
     Arg = ImpCastExprToType(Arg, ParamType, CK_NoOp, CastCategory(Arg)).take();
   } else {
     // We can't perform this conversion.
@@ -4057,8 +4064,10 @@ Sema::BuildExpressionFromDeclTemplateArgument(const TemplateArgument &Arg,
       // We might need to perform a trailing qualification conversion, since
       // the element type on the parameter could be more qualified than the
       // element type in the expression we constructed.
+      bool ObjCLifetimeConversion;
       if (IsQualificationConversion(((Expr*) RefExpr.get())->getType(),
-                                    ParamType.getUnqualifiedType(), false))
+                                    ParamType.getUnqualifiedType(), false,
+                                    ObjCLifetimeConversion))
         RefExpr = ImpCastExprToType(RefExpr.take(), ParamType.getUnqualifiedType(), CK_NoOp);
 
       assert(!RefExpr.isInvalid() &&

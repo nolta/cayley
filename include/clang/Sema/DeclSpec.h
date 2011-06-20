@@ -40,6 +40,7 @@ namespace clang {
   class NamespaceDecl;
   class NestedNameSpecifier;
   class NestedNameSpecifierLoc;
+  class ObjCDeclSpec;
   class Preprocessor;
   class Declarator;
   struct TemplateIdAnnotation;
@@ -345,6 +346,8 @@ private:
   void SaveWrittenBuiltinSpecs();
   void SaveStorageSpecifierAsWritten();
 
+  ObjCDeclSpec *ObjCQualifiers;
+
   static bool isTypeRep(TST T) {
     return (T == TST_typename || T == TST_typeofType ||
             T == TST_underlyingType);
@@ -384,7 +387,8 @@ public:
       ProtocolQualifiers(0),
       NumProtocolQualifiers(0),
       ProtocolLocs(0),
-      writtenBS() {
+      writtenBS(),
+      ObjCQualifiers(0) {
   }
   ~DeclSpec() {
     delete [] ProtocolQualifiers;
@@ -654,6 +658,9 @@ public:
     return writtenBS;
   }
 
+  ObjCDeclSpec *getObjCQualifiers() const { return ObjCQualifiers; }
+  void setObjCQualifiers(ObjCDeclSpec *quals) { ObjCQualifiers = quals; }
+
   /// isMissingDeclaratorOk - This checks if this DeclSpec can stand alone,
   /// without a Declarator. Only tag declspecs can stand alone.
   bool isMissingDeclaratorOk();
@@ -690,7 +697,10 @@ public:
     DQ_PR_copy = 0x20,
     DQ_PR_nonatomic = 0x40,
     DQ_PR_setter = 0x80,
-    DQ_PR_atomic = 0x100
+    DQ_PR_atomic = 0x100,
+    DQ_PR_weak =   0x200,
+    DQ_PR_strong = 0x400,
+    DQ_PR_unsafe_unretained = 0x800
   };
 
 
@@ -724,7 +734,7 @@ private:
   ObjCDeclQualifier objcDeclQualifier : 6;
 
   // NOTE: VC++ treats enums as signed, avoid using ObjCPropertyAttributeKind
-  unsigned PropertyAttributes : 9;
+  unsigned PropertyAttributes : 12;
   IdentifierInfo *GetterName;    // getter name of NULL if no getter
   IdentifierInfo *SetterName;    // setter name of NULL if no setter
 };

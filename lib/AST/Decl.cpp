@@ -231,6 +231,14 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
       if (!FoundExtern)
         return LinkageInfo::internal();
     }
+    if (Var->getStorageClass() == SC_None) {
+      const VarDecl *PrevVar = Var->getPreviousDeclaration();
+      for (; PrevVar; PrevVar = PrevVar->getPreviousDeclaration())
+        if (PrevVar->getStorageClass() == SC_PrivateExtern)
+          break;
+        if (PrevVar)
+          return PrevVar->getLinkageAndVisibility();
+    }
   } else if (isa<FunctionDecl>(D) || isa<FunctionTemplateDecl>(D)) {
     // C++ [temp]p4:
     //   A non-member function template can have internal linkage; any
@@ -2377,6 +2385,16 @@ void BlockDecl::setCaptures(ASTContext &Context,
   void *buffer = Context.Allocate(allocationSize, /*alignment*/sizeof(void*));
   memcpy(buffer, begin, allocationSize);
   Captures = static_cast<Capture*>(buffer);
+}
+
+bool BlockDecl::capturesVariable(const VarDecl *variable) const {
+  for (capture_const_iterator
+         i = capture_begin(), e = capture_end(); i != e; ++i)
+    // Only auto vars can be captured, so no redeclaration worries.
+    if (i->getVariable() == variable)
+      return true;
+
+  return false;
 }
 
 SourceRange BlockDecl::getSourceRange() const {
