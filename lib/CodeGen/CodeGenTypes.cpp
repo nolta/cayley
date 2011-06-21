@@ -329,7 +329,7 @@ const llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
     return llvm::StructType::get(TheModule.getContext(), elementTypes);
     */
     const llvm::Type *a = llvm::ArrayType::get(i32, STy.getArrayLen());
-    return llvm::StructType::get(TheModule.getContext(), p, a, NULL);
+    return llvm::StructType::get(p, a, NULL);
   }
   case Type::VariableArray: {
     const VariableArrayType &A = cast<VariableArrayType>(Ty);

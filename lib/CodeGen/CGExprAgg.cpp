@@ -589,7 +589,7 @@ AggExprEmitter::EmitInitializationToLValue(Expr* E, LValue LV) {
     CGF.EmitStoreThroughLValue(RV, LV, type);
   } else if (type->isAnyComplexType()) {
     CGF.EmitComplexExprIntoAddr(E, LV.getAddress(), false);
-  } else if (T->isSliceType()) {
+  } else if (type->isSliceType()) {
     CGF.EmitSliceExprIntoAddr(E, LV.getAddress(), false);
   } else if (CGF.hasAggregateLLVMType(type)) {
     CGF.EmitAggExpr(E, AggValueSlot::forLValue(LV, true, false,
