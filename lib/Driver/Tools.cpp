@@ -330,6 +330,7 @@ void Clang::AddPreprocessingOptions(const Driver &D,
       = types::isObjC(InputType) && isObjCAutoRefCount(Args);
     getToolChain().AddClangCXXStdlibIncludeArgs(Args, CmdArgs, 
                                                 ObjCXXAutoRefCount);
+    Args.AddAllArgs(CmdArgs, options::OPT_stdlib_EQ);
   }
 
   // Add -Wp, and -Xassembler if using the preprocessor.
@@ -2908,6 +2909,17 @@ void darwin::Link::AddLinkArgs(Compilation &C,
     }
     if (!UsesLdClassic)
       CmdArgs.push_back("-demangle");
+  }
+
+  // If we are using LTO, then automatically create a temporary file path for
+  // the linker to use, so that it's lifetime will extend past a possible
+  // dsymutil step.
+  if (Version[0] >= 116 && D.IsUsingLTO(Args)) {
+    const char *TmpPath = C.getArgs().MakeArgString(
+      D.GetTemporaryPath(types::getTypeTempSuffix(types::TY_Object)));
+    C.addTempFile(TmpPath);
+    CmdArgs.push_back("-object_path_lto");
+    CmdArgs.push_back(TmpPath);
   }
 
   // Derived from the "link" spec.

@@ -1433,6 +1433,10 @@ void StmtPrinter::VisitSubstNonTypeTemplateParmPackExpr(
   OS << Node->getParameterPack()->getNameAsString();
 }
 
+void StmtPrinter::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *Node){
+  PrintExpr(Node->GetTemporaryExpr());
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

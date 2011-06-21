@@ -191,6 +191,7 @@ namespace clang {
     void VisitSizeOfPackExpr(SizeOfPackExpr *E);
     void VisitSubstNonTypeTemplateParmPackExpr(
                                            SubstNonTypeTemplateParmPackExpr *E);
+    void VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E);
     void VisitOpaqueValueExpr(OpaqueValueExpr *E);
     
     // CUDA Expressions
@@ -1446,6 +1447,11 @@ void ASTStmtReader::VisitSubstNonTypeTemplateParmPackExpr(
   E->NameLoc = ReadSourceLocation(Record, Idx);
 }
 
+void ASTStmtReader::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
+  VisitExpr(E);
+  E->Temporary = Reader.ReadSubExpr();
+}
+
 void ASTStmtReader::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);
   Idx++; // skip ID
@@ -2040,6 +2046,10 @@ Stmt *ASTReader::ReadStmtFromStream(PerFileData &F) {
         
     case EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK:
       S = new (Context) SubstNonTypeTemplateParmPackExpr(Empty);
+      break;
+        
+    case EXPR_MATERIALIZE_TEMPORARY:
+      S = new (Context) MaterializeTemporaryExpr(Empty);
       break;
         
     case EXPR_OPAQUE_VALUE: {
