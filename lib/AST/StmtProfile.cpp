@@ -383,7 +383,7 @@ void StmtProfiler::VisitConditionalOperator(const ConditionalOperator *S) {
 }
 
 void StmtProfiler::VisitBinaryConditionalOperator(
-    const BinaryConditionalOperator *S){
+    const BinaryConditionalOperator *S) {
   VisitExpr(S);
 }
 
