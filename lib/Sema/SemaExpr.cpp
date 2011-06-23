@@ -3214,7 +3214,7 @@ Sema::ActOnArraySubscriptsExpr(Scope *S, Expr *Base, SourceLocation LLoc,
   }
 
   assert(VK == VK_RValue || LangOpts.CPlusPlus ||
-         !IsCForbiddenLValueType(Context, ResultType));
+         !ResultType.isCForbiddenLValueType());
 
   return Owned(new (Context) ArraySubscriptsExpr(Context, LHSExp, Args, NumArgs,
                                                  ResultType, VK, OK, RLoc));
@@ -3308,7 +3308,7 @@ Sema::ActOnSliceExpr(Scope *S, Expr *Base, SourceLocation LLoc,
   }
 
   assert(VK == VK_RValue || LangOpts.CPlusPlus ||
-         !IsCForbiddenLValueType(Context, ResultType));
+         !ResultType.isCForbiddenLValueType());
 
   return Owned(new (Context) SliceExpr(Context, LHSExp, Args, NumArgs,
                                        ResultType, VK, OK, RLoc));
