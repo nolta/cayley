@@ -1629,9 +1629,7 @@ Value *ScalarExprEmitter::VisitUnarySliceDim(const UnaryOperator *E, unsigned Di
 
   Value *Addr = CGF.EmitSliceExpr(Op, true, false).second;
   Addr = Builder.CreateStructGEP(Addr, STy->getArrayIdxOfDim(Dim-1), "idx");
-  Addr->dump();
   Addr = Builder.CreateLoad(Addr);
-  Addr->dump();
   return Addr;
 }
 
