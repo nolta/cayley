@@ -571,24 +571,6 @@ Decl *Decl::castFromDeclContext (const DeclContext *D) {
   }
 }
 
-template <typename T>
-void Decl::dropAttr() {
-  if (!HasAttrs) return;
-  AttrVec &Attrs = getASTContext().getDeclAttrs(this);
-  for (unsigned i = 0, e = Attrs.size(); i != e; /* in loop */) {
-    if (isa<T>(Attrs[i])) {
-      Attrs.erase(Attrs.begin() + i);
-      --e;
-    }
-    else
-      ++i;
-  }
-  if (Attrs.empty())
-    HasAttrs = false;
-}
-// Force instantiation for WeakImportAttr which gets used.
-template void Decl::dropAttr<WeakImportAttr>();
-
 DeclContext *Decl::castToDeclContext(const Decl *D) {
   Decl::Kind DK = D->getKind();
   switch(DK) {
@@ -659,12 +641,8 @@ DeclContext *Decl::getNonClosureContext() {
   // This is basically "while (DC->isClosure()) DC = DC->getParent();"
   // except that it's significantly more efficient to cast to a known
   // decl type and call getDeclContext() than to call getParent().
-  do {
-    if (isa<BlockDecl>(DC)) {
-      DC = cast<BlockDecl>(DC)->getDeclContext();
-      continue;
-    }
-  } while (false);
+  while (isa<BlockDecl>(DC))
+    DC = cast<BlockDecl>(DC)->getDeclContext();
 
   assert(!DC->isClosure());
   return DC;

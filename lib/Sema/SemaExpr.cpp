@@ -4278,7 +4278,7 @@ ExprResult Sema::CheckCastTypes(SourceLocation CastStartLoc, SourceRange TyR,
             ExprPtr->getPointeeType()->isObjCLifetimeType() &&
             !CastQuals.compatiblyIncludesObjCLifetime(ExprQuals)) {
           Diag(castExpr->getLocStart(), 
-               diag::err_typecheck_incompatible_lifetime)
+               diag::err_typecheck_incompatible_ownership)
             << castExprType << castType << AA_Casting
             << castExpr->getSourceRange();
           
@@ -6971,8 +6971,8 @@ QualType Sema::CheckAssignmentOperands(Expr *LHS, ExprResult &RHS,
     if (ConvTy == Compatible) {
       if (LHSType.getObjCLifetime() == Qualifiers::OCL_Strong)
         checkRetainCycles(LHS, RHS.get());
-      else
-        checkUnsafeAssigns(Loc, LHSType, RHS.get());
+      else if (getLangOptions().ObjCAutoRefCount)
+        checkUnsafeExprAssigns(Loc, LHS, RHS.get());
     }
   } else {
     // Compound assignment "x += y"
@@ -8829,7 +8829,7 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
 
 
     } else if (lhq.getObjCLifetime() != rhq.getObjCLifetime()) {
-      DiagKind = diag::err_typecheck_incompatible_lifetime;
+      DiagKind = diag::err_typecheck_incompatible_ownership;
       break;
     }
 
