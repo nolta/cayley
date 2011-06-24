@@ -1182,7 +1182,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       if (getLang().ObjC1 && Tok.isAtStartOfLine() &&
           isSimpleObjCMessageExpression())
         return move(LHS);
-          
+
       Loc = ConsumeBracket();
       if (!getLang().Cayley) {
         ExprResult Idx;
@@ -1192,7 +1192,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
           Idx = ParseExpression();
 
         SourceLocation RLoc = Tok.getLocation();
-  
+
         if (!LHS.isInvalid() && !Idx.isInvalid() && Tok.is(tok::r_square)) {
           LHS = Actions.ActOnArraySubscriptExpr(getCurScope(), LHS.take(), Loc,
                                                 Idx.take(), RLoc);
@@ -1203,10 +1203,10 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         MatchRHSPunctuation(tok::r_square, Loc);
 
       } else {
-        // Cayley allows for multiple indicies
+        // Cayley allows for multiple indices
         ExprVector ArgExprs(Actions);
         CommaLocsTy CommaLocs;
-      
+
         if (ParseExpressionList(ArgExprs, CommaLocs, &Sema::CodeCompleteCall,
                                 LHS.get())) {
           LHS = ExprError();
@@ -1219,7 +1219,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
           MatchRHSPunctuation(tok::r_square, Loc);
           LHS = ExprError();
         } else {
-          assert((ArgExprs.size() == 0 || 
+          assert((ArgExprs.size() == 0 ||
                   ArgExprs.size()-1 == CommaLocs.size())&&
                  "Unexpected number of commas!");
           if (ArgExprs.size() == 1)
@@ -1239,7 +1239,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       Loc = ConsumeToken();
       ExprVector ArgExprs(Actions);
       CommaLocsTy CommaLocs;
-    
+
       if (ParseExpressionList(ArgExprs, CommaLocs, &Sema::CodeCompleteCall,
                          LHS.get())) {
         LHS = ExprError();

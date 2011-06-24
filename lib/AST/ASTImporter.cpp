@@ -1420,7 +1420,7 @@ QualType ASTNodeImporter::VisitSliceType(const SliceType *T) {
   QualType ToPointeeType = Importer.Import(T->getPointeeType());
   if (ToPointeeType.isNull())
     return QualType();
-  
+
   return Importer.getToContext().getSliceType(ToPointeeType, T->getNumDims());
 }
 

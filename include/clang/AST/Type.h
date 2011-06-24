@@ -1864,7 +1864,7 @@ class SliceType : public Type, public llvm::FoldingSetNode {
   SliceType(QualType Pointee, QualType CanonicalPtr, unsigned NumDims) :
     Type(Slice, CanonicalPtr, Pointee->isDependentType(),
          Pointee->isVariablyModifiedType(),
-         Pointee->containsUnexpandedParameterPack()), 
+         Pointee->containsUnexpandedParameterPack()),
     PointeeType(Pointee), NumDims(NumDims) {
   }
   friend class ASTContext;  // ASTContext creates these.

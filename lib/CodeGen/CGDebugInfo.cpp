@@ -434,7 +434,7 @@ llvm::DIType CGDebugInfo::CreateType(const PointerType *Ty,
 llvm::DIType CGDebugInfo::CreateType(const SliceType *Ty,
                                      llvm::DIFile Unit) {
     // FIXME -- see block pointer
-  return CreatePointerLikeType(llvm::dwarf::DW_TAG_pointer_type, Ty, 
+  return CreatePointerLikeType(llvm::dwarf::DW_TAG_pointer_type, Ty,
                                Ty->getPointeeType(), Unit);
   // Bit size, align and offset of the type.
   unsigned Encoding = llvm::dwarf::DW_ATE_complex_float;
@@ -443,7 +443,7 @@ llvm::DIType CGDebugInfo::CreateType(const SliceType *Ty,
 
   uint64_t Size = CGM.getContext().getTypeSize(Ty);
   uint64_t Align = CGM.getContext().getTypeAlign(Ty);
-  llvm::DIType DbgTy = 
+  llvm::DIType DbgTy =
     DBuilder.createBasicType("complex", Size, Align, Encoding);
 
   return DbgTy;

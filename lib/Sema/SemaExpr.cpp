@@ -3173,7 +3173,7 @@ Sema::ActOnArraySubscriptsExpr(Scope *S, Expr *Base, SourceLocation LLoc,
     if (!IndexExpr->getType()->isIntegerType() && !IndexExpr->isTypeDependent())
       return ExprError(Diag(LLoc, diag::err_typecheck_subscript_not_integer)
                        << IndexExpr->getSourceRange());
-  
+
     if ((IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_S) ||
          IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_U))
            && !IndexExpr->isTypeDependent())
@@ -3266,7 +3266,7 @@ Sema::ActOnSliceExpr(Scope *S, Expr *Base, SourceLocation LLoc,
     if (!IndexExpr->getType()->isIntegerType() && !IndexExpr->isTypeDependent())
       return ExprError(Diag(LLoc, diag::err_typecheck_subscript_not_integer)
                        << IndexExpr->getSourceRange());
-  
+
     if ((IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_S) ||
          IndexExpr->getType()->isSpecificBuiltinType(BuiltinType::Char_U))
            && !IndexExpr->isTypeDependent())

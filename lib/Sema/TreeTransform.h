@@ -3421,8 +3421,8 @@ template<typename Derived>
 QualType TreeTransform<Derived>::TransformSliceType(TypeLocBuilder &TLB,
                                                     SliceTypeLoc TL) {
   const SliceType *T = TL.getTypePtr();
-  QualType PointeeType                                      
-    = getDerived().TransformType(TLB, TL.getPointeeLoc());  
+  QualType PointeeType
+    = getDerived().TransformType(TLB, TL.getPointeeLoc());
   if (PointeeType.isNull())
     return QualType();
 
@@ -3435,11 +3435,11 @@ QualType TreeTransform<Derived>::TransformSliceType(TypeLocBuilder &TLB,
     if (Result.isNull())
       return QualType();
   }
-                                                            
+
   SliceTypeLoc NewT = TLB.push<SliceTypeLoc>(Result);
   //NewT.setNumDims(T->getNumDims());
   NewT.setSigilLoc(TL.getSigilLoc());
-  return Result;  
+  return Result;
 }
 
 template<typename Derived>
@@ -6071,10 +6071,10 @@ TreeTransform<Derived>::TransformArraySubscriptsExpr(ArraySubscriptsExpr *E) {
   // Transform arguments.
   bool ArgChanged = false;
   ASTOwningVector<Expr*> Args(SemaRef);
-  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args, 
+  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
                                   &ArgChanged))
     return ExprError();
-  
+
   if (!getDerived().AlwaysRebuild() &&
       LHS.get() == E->getLHS() &&
       !ArgChanged)
@@ -6096,10 +6096,10 @@ TreeTransform<Derived>::TransformSliceExpr(SliceExpr *E) {
   // Transform arguments.
   bool ArgChanged = false;
   ASTOwningVector<Expr*> Args(SemaRef);
-  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args, 
+  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
                                   &ArgChanged))
     return ExprError();
-  
+
   if (!getDerived().AlwaysRebuild() &&
       LHS.get() == E->getLHS() &&
       !ArgChanged)

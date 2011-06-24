@@ -1837,7 +1837,7 @@ public:
   Expr **getArgs() {
     return reinterpret_cast<Expr **>(SubExprs+ARGS_START);
   }
-  
+
   /// getArg - Return the specified argument.
   Expr *getArg(unsigned Arg) {
     assert(Arg < NumArgs && "Arg access out of range!");
@@ -1933,7 +1933,7 @@ public:
   Expr **getArgs() {
     return reinterpret_cast<Expr **>(SubExprs+ARGS_START);
   }
-  
+
   /// getArg - Return the specified argument.
   Expr *getArg(unsigned Arg) {
     assert(Arg < NumArgs && "Arg access out of range!");

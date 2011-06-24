@@ -100,7 +100,7 @@ public:
   SlicePairTy Visit(Expr *E) {
     return StmtVisitor<SliceExprEmitter, SlicePairTy>::Visit(E);
   }
-    
+
   SlicePairTy VisitStmt(Stmt *S) {
     S->dump(CGF.getContext().getSourceManager());
     assert(0 && "Stmt can't have slice result type!");
@@ -356,7 +356,7 @@ SlicePairTy SliceExprEmitter::VisitSliceExpr(const SliceExpr *E) {
                                       "slice.arr.idx");
     Builder.CreateStore(ReverseStrides[j], Address);
   }
-  
+
   // fill array with dimensions
   for (unsigned i = 0; i != NumDims; ++i) {
     Address = Builder.CreateStructGEP(ArrayTmp,
@@ -397,7 +397,7 @@ SlicePairTy SliceExprEmitter::EmitSliceToSliceCast(SlicePairTy Val,
   return Val;
 }
 
-SlicePairTy SliceExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op, 
+SlicePairTy SliceExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
                                        QualType DestTy) {
     /*
   switch (CK) {
@@ -424,12 +424,12 @@ SlicePairTy SliceExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
   // cherry-picking the ones we have test cases for.
   if (CK == CK_LValueBitCast) {
     llvm::Value *V = CGF.EmitLValue(Op).getAddress();
-    V = Builder.CreateBitCast(V, 
+    V = Builder.CreateBitCast(V,
                       CGF.ConvertType(CGF.getContext().getPointerType(DestTy)));
     // FIXME: Are the qualifiers correct here?
     return EmitLoadOfSlice(V, DestTy.isVolatileQualified());
   }
-  
+
   // C99 6.3.1.7: When a value of real type is converted to a slice type, the
   // real part of the slice result value is determined by the rules of
   // conversion to the corresponding real type and the imaginary part of the
@@ -568,12 +568,12 @@ EmitCompoundAssignLValue(const CompoundAssignOperator *E,
   assert(CGF.getContext().hasSameUnqualifiedType(OpInfo.Ty,
                                                  E->getRHS()->getType()));
   OpInfo.RHS = Visit(E->getRHS());
-  
+
   LValue LHS = CGF.EmitLValue(E->getLHS());
 
   // Load from the l-value.
   SlicePairTy LHSSlicePair = EmitLoadOfLValue(LHS);
-  
+
   OpInfo.LHS = EmitSliceToSliceCast(LHSSlicePair, LHSTy, OpInfo.Ty);
 
   // Expand the binary operator.
@@ -613,7 +613,7 @@ EmitCompoundAssign(const CompoundAssignOperator *E,
 
 LValue SliceExprEmitter::EmitBinAssignLValue(const BinaryOperator *E,
                                              SlicePairTy &Val) {
-  assert(CGF.getContext().hasSameUnqualifiedType(E->getLHS()->getType(), 
+  assert(CGF.getContext().hasSameUnqualifiedType(E->getLHS()->getType(),
                                                  E->getRHS()->getType()) &&
          "Invalid assignment");
   TestAndClearIgnorePointer();
@@ -800,12 +800,12 @@ EmitSlicePrePostIncDec(const UnaryOperator *E, LValue LV,
                        bool isInc, bool isPre) {
   SlicePairTy InVal = LoadSliceFromAddr(LV.getAddress(),
                                             LV.isVolatileQualified());
-  
+
   llvm::Value *NextVal;
   if (isa<llvm::IntegerType>(InVal.first->getType())) {
     uint64_t AmountVal = isInc ? 1 : -1;
     NextVal = llvm::ConstantInt::get(InVal.first->getType(), AmountVal, true);
-    
+
     // Add the inc/dec to the real part.
     NextVal = Builder.CreateAdd(InVal.first, NextVal, isInc ? "inc" : "dec");
   } else {
@@ -814,16 +814,16 @@ EmitSlicePrePostIncDec(const UnaryOperator *E, LValue LV,
     if (!isInc)
       FVal.changeSign();
     NextVal = llvm::ConstantFP::get(getLLVMContext(), FVal);
-    
+
     // Add the inc/dec to the real part.
     NextVal = Builder.CreateFAdd(InVal.first, NextVal, isInc ? "inc" : "dec");
   }
-  
+
   SlicePairTy IncVal(NextVal, InVal.second);
-  
+
   // Store the updated result through the lvalue.
   StoreSliceToAddr(IncVal, LV.getAddress(), LV.isVolatileQualified());
-  
+
   // If this is a postinc, return the value read from memory, otherwise use the
   // updated value.
   return isPre ? IncVal : InVal;
