@@ -2716,6 +2716,8 @@ static void HandleNSReturnsRetainedAttr(Decl *d, const AttributeList &attr,
 
   if (ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(d))
     returnType = MD->getResultType();
+  else if (ObjCPropertyDecl *PD = dyn_cast<ObjCPropertyDecl>(d))
+    returnType = PD->getType();
   else if (S.getLangOptions().ObjCAutoRefCount && hasDeclarator(d) &&
            (attr.getKind() == AttributeList::AT_ns_returns_retained))
     return; // ignore: was handled as a type attribute
@@ -3258,7 +3260,7 @@ void Sema::DelayedDiagnostics::popParsingDecl(Sema &S, ParsingDeclState state,
 
   // We only want to actually emit delayed diagnostics when we
   // successfully parsed a decl.
-  if (decl) {
+  if (decl && !decl->isInvalidDecl()) {
     // We emit all the active diagnostics, not just those starting
     // from the saved state.  The idea is this:  we get one push for a
     // decl spec and another for each declarator;  in a decl group like:

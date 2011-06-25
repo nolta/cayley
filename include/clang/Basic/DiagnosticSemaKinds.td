@@ -441,6 +441,9 @@ def warn_atomic_property_rule : Warning<
 def warn_ownin_getter_rule : Warning<
   "property's synthesized getter follows Cocoa naming"
   " convention for returning 'owned' objects">;
+def warn_property_getter_owning_mismatch : Warning<
+  "property declared as returning non-retained objects"
+  "; getter returning retained objects">;
 def err_ownin_getter_rule : Error<
   "property's synthesized getter follows Cocoa naming"
   " convention for returning 'owned' objects">;
@@ -2601,10 +2604,12 @@ def warn_arc_non_pod_class_with_object_member : Warning<
   "to make it ABI-compatible">, InGroup<AutomaticReferenceCountingABI>,
   DefaultIgnore;
 def warn_arc_retained_assign : Warning<
-  "assigning retained object to %select{weak|unsafe_unretained}0 variable">,
+  "assigning retained object to %select{weak|unsafe_unretained}0 variable"
+  "; object will be released after assignment">,
   InGroup<ARCUnsafeRetainedAssign>;
 def warn_arc_retained_property_assign : Warning<
-  "assigning retained object to unsafe property">,
+  "assigning retained object to unsafe property"
+  "; object will be released after assignment">,
   InGroup<ARCUnsafeRetainedAssign>;
 def warn_arc_trivial_member_function_with_object_member : Warning<
   "%0 cannot be shared between ARC and non-ARC "

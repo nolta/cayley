@@ -1304,7 +1304,7 @@ CodeGenFunction::EmitAsmInputLValue(const AsmStmt &S,
   llvm::Value *Arg;
   if (Info.allowsRegister() || !Info.allowsMemory()) {
     if (!CodeGenFunction::hasAggregateLLVMType(InputType)) {
-      Arg = EmitLoadOfLValue(InputValue, InputType).getScalarVal();
+      Arg = EmitLoadOfLValue(InputValue).getScalarVal();
     } else {
       const llvm::Type *Ty = ConvertType(InputType);
       uint64_t Size = CGM.getTargetData().getTypeSizeInBits(Ty);
@@ -1642,7 +1642,6 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
       }
     }
 
-    EmitStoreThroughLValue(RValue::get(Tmp), ResultRegDests[i],
-                           ResultRegQualTys[i]);
+    EmitStoreThroughLValue(RValue::get(Tmp), ResultRegDests[i]);
   }
 }
