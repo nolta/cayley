@@ -14,59 +14,67 @@ Slices, a.k.a. multidimensional pointers
 
 Slices are declared much like pointers:
 
-    complex float $vector;  // 1d slice
-    double $$matrix;        // 2d slice
+{% highlight c %}
+complex float $vector;  // 1d slice
+double $$matrix;        // 2d slice
+{% endhighlight %}
 
 but allow for multiple indicies:
 
-    c = vector[k];
-    d = matrix[i,j];
+{% highlight c %}
+c = vector[k];
+d = matrix[i,j];
+{% endhighlight %}
 
 Examples
 --------
 
 A safer version of strcpy:
 
-    char $
-    slicecpy( char $ dst, const char $ src )
+{% highlight c %}
+char $
+slicecpy( char $ dst, const char $ src )
+{
+    unsigned i;
+    for (i = 0; i < __slice_dim1 dst - 1; ++i)
     {
-        unsigned i;
-        for (i = 0; i < __slice_dim1 dst - 1; ++i)
-        {
-            if (src[i] != '\0')
-                dst[i] = src[i];
-            else
-                break;
-        }
-        dst[i] = '\0';
-        return dst;
+        if (src[i] != '\0')
+            dst[i] = src[i];
+        else
+            break;
     }
+    dst[i] = '\0';
+    return dst;
+}
+{% endhighlight %}
 
 A simple matrix multiplier:
 
-    void
-    simple_matmul( double $$c, const double $$a, const double $$b )
-    {
-        unsigned m = __slice_dim1 c;
-        unsigned n = __slice_dim2 c;
-        unsigned o = __slice_dim2 a;
-        assert(m == __slice_dim1 a);
-        assert(n == __slice_dim2 b);
-        assert(o == __slice_dim1 b);
+{% highlight c %}
+void
+simple_matmul( double $$c, const double $$a, const double $$b )
+{
+    unsigned m = __slice_dim1 c;
+    unsigned n = __slice_dim2 c;
+    unsigned o = __slice_dim2 a;
+    assert(m == __slice_dim1 a);
+    assert(n == __slice_dim2 b);
+    assert(o == __slice_dim1 b);
 
-        for (unsigned i = 0; i < m; ++i)
-        for (unsigned j = 0; j < n; ++j)
-        {
-            c[i,j] = 0.;
-            for (unsigned k = 0; k < o; ++k)
-                c[i,j] += a[i,k]*b[k,j];
-        }
+    for (unsigned i = 0; i < m; ++i)
+    for (unsigned j = 0; j < n; ++j)
+    {
+        c[i,j] = 0.;
+        for (unsigned k = 0; k < o; ++k)
+            c[i,j] += a[i,k]*b[k,j];
     }
+}
+{% endhighlight %}
 
 Compiler
 --------
 
-I've hacked up a version of [Clang](http://http://clang.llvm.org/), the LLVM
+I've hacked up a version of [Clang](http://clang.llvm.org/), the LLVM
 C/C++/Obj-C compiler, with support for slices.
 
 1. Checkout LLVM:
