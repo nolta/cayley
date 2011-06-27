@@ -71,18 +71,18 @@ C/C++/Obj-C compiler, with support for slices.
 
 1. Checkout LLVM:
 
-    $ svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm
+        $ svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm
 
 2. Checkout Clang+Cayley:
 
-    $ cd llvm/tools
-    $ git clone git://github.com/nolta/cayley clang
+        $ cd llvm/tools
+        $ git clone git://github.com/nolta/cayley clang
 
 3. Build:
 
-    $ mkdir /path/to/llvm-build
-    $ cd /path/to/llvm-build
-    $ /path/to/llvm/configure
-    $ make
+        $ mkdir /path/to/llvm-build
+        $ cd /path/to/llvm-build
+        $ /path/to/llvm/configure
+        $ make
 
 Cayley source files have the extension `.cy`.
