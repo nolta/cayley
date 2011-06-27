@@ -3096,7 +3096,7 @@ Sema::CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
 
   if (ResultType->isVoidType() && !getLangOptions().CPlusPlus) {
     // GNU extension: subscripting on pointer to void
-    Diag(LLoc, diag::ext_gnu_void_ptr)
+    Diag(LLoc, diag::ext_gnu_subscript_void_type)
       << BaseExpr->getSourceRange();
 
     // C forbids expressions of unqualified void type from being l-values.
@@ -5831,6 +5831,145 @@ QualType Sema::CheckRemainderOperands(
   return compType;
 }
 
+/// \brief Diagnose invalid arithmetic on two void pointers.
+static void diagnoseArithmeticOnTwoVoidPointers(Sema &S, SourceLocation Loc,
+                                                Expr *LHS, Expr *RHS) {
+  S.Diag(Loc, S.getLangOptions().CPlusPlus
+                ? diag::err_typecheck_pointer_arith_void_type
+                : diag::ext_gnu_void_ptr)
+    << 1 /* two pointers */ << LHS->getSourceRange() << RHS->getSourceRange();
+}
+
+/// \brief Diagnose invalid arithmetic on a void pointer.
+static void diagnoseArithmeticOnVoidPointer(Sema &S, SourceLocation Loc,
+                                            Expr *Pointer) {
+  S.Diag(Loc, S.getLangOptions().CPlusPlus
+                ? diag::err_typecheck_pointer_arith_void_type
+                : diag::ext_gnu_void_ptr)
+    << 0 /* one pointer */ << Pointer->getSourceRange();
+}
+
+/// \brief Diagnose invalid arithmetic on two function pointers.
+static void diagnoseArithmeticOnTwoFunctionPointers(Sema &S, SourceLocation Loc,
+                                                    Expr *LHS, Expr *RHS) {
+  assert(LHS->getType()->isAnyPointerType());
+  assert(RHS->getType()->isAnyPointerType());
+  S.Diag(Loc, S.getLangOptions().CPlusPlus
+                ? diag::err_typecheck_pointer_arith_function_type
+                : diag::ext_gnu_ptr_func_arith)
+    << 1 /* two pointers */ << LHS->getType()->getPointeeType()
+    // We only show the second type if it differs from the first.
+    << (unsigned)!S.Context.hasSameUnqualifiedType(LHS->getType(),
+                                                   RHS->getType())
+    << RHS->getType()->getPointeeType()
+    << LHS->getSourceRange() << RHS->getSourceRange();
+}
+
+/// \brief Diagnose invalid arithmetic on a function pointer.
+static void diagnoseArithmeticOnFunctionPointer(Sema &S, SourceLocation Loc,
+                                                Expr *Pointer) {
+  assert(Pointer->getType()->isAnyPointerType());
+  S.Diag(Loc, S.getLangOptions().CPlusPlus
+                ? diag::err_typecheck_pointer_arith_function_type
+                : diag::ext_gnu_ptr_func_arith)
+    << 0 /* one pointer */ << Pointer->getType()->getPointeeType()
+    << 0 /* one pointer, so only one type */
+    << Pointer->getSourceRange();
+}
+
+/// \brief Check the validity of an arithmetic pointer operand.
+///
+/// If the operand has pointer type, this code will check for pointer types
+/// which are invalid in arithmetic operations. These will be diagnosed
+/// appropriately, including whether or not the use is supported as an
+/// extension.
+///
+/// \returns True when the operand is valid to use (even if as an extension).
+static bool checkArithmeticOpPointerOperand(Sema &S, SourceLocation Loc,
+                                            Expr *Operand) {
+  if (!Operand->getType()->isAnyPointerType()) return true;
+
+  QualType PointeeTy = Operand->getType()->getPointeeType();
+  if (PointeeTy->isVoidType()) {
+    diagnoseArithmeticOnVoidPointer(S, Loc, Operand);
+    return !S.getLangOptions().CPlusPlus;
+  }
+  if (PointeeTy->isFunctionType()) {
+    diagnoseArithmeticOnFunctionPointer(S, Loc, Operand);
+    return !S.getLangOptions().CPlusPlus;
+  }
+
+  if ((Operand->getType()->isPointerType() &&
+       !Operand->getType()->isDependentType()) ||
+      Operand->getType()->isObjCObjectPointerType()) {
+    QualType PointeeTy = Operand->getType()->getPointeeType();
+    if (S.RequireCompleteType(
+          Loc, PointeeTy,
+          S.PDiag(diag::err_typecheck_arithmetic_incomplete_type)
+            << PointeeTy << Operand->getSourceRange()))
+      return false;
+  }
+
+  return true;
+}
+
+/// \brief Check the validity of a binary arithmetic operation w.r.t. pointer
+/// operands.
+///
+/// This routine will diagnose any invalid arithmetic on pointer operands much
+/// like \see checkArithmeticOpPointerOperand. However, it has special logic
+/// for emitting a single diagnostic even for operations where both LHS and RHS
+/// are (potentially problematic) pointers.
+///
+/// \returns True when the operand is valid to use (even if as an extension).
+static bool checkArithmeticBinOpPointerOperands(Sema &S, SourceLocation Loc,
+                                                Expr *LHS, Expr *RHS) {
+  bool isLHSPointer = LHS->getType()->isAnyPointerType();
+  bool isRHSPointer = RHS->getType()->isAnyPointerType();
+  if (!isLHSPointer && !isRHSPointer) return true;
+
+  QualType LHSPointeeTy, RHSPointeeTy;
+  if (isLHSPointer) LHSPointeeTy = LHS->getType()->getPointeeType();
+  if (isRHSPointer) RHSPointeeTy = RHS->getType()->getPointeeType();
+
+  // Check for arithmetic on pointers to incomplete types.
+  bool isLHSVoidPtr = isLHSPointer && LHSPointeeTy->isVoidType();
+  bool isRHSVoidPtr = isRHSPointer && RHSPointeeTy->isVoidType();
+  if (isLHSVoidPtr || isRHSVoidPtr) {
+    if (!isRHSVoidPtr) diagnoseArithmeticOnVoidPointer(S, Loc, LHS);
+    else if (!isLHSVoidPtr) diagnoseArithmeticOnVoidPointer(S, Loc, RHS);
+    else diagnoseArithmeticOnTwoVoidPointers(S, Loc, LHS, RHS);
+
+    return !S.getLangOptions().CPlusPlus;
+  }
+
+  bool isLHSFuncPtr = isLHSPointer && LHSPointeeTy->isFunctionType();
+  bool isRHSFuncPtr = isRHSPointer && RHSPointeeTy->isFunctionType();
+  if (isLHSFuncPtr || isRHSFuncPtr) {
+    if (!isRHSFuncPtr) diagnoseArithmeticOnFunctionPointer(S, Loc, LHS);
+    else if (!isLHSFuncPtr) diagnoseArithmeticOnFunctionPointer(S, Loc, RHS);
+    else diagnoseArithmeticOnTwoFunctionPointers(S, Loc, LHS, RHS);
+
+    return !S.getLangOptions().CPlusPlus;
+  }
+
+  Expr *Operands[] = { LHS, RHS };
+  for (unsigned i = 0; i < 2; ++i) {
+    Expr *Operand = Operands[i];
+    if ((Operand->getType()->isPointerType() &&
+         !Operand->getType()->isDependentType()) ||
+        Operand->getType()->isObjCObjectPointerType()) {
+      QualType PointeeTy = Operand->getType()->getPointeeType();
+      if (S.RequireCompleteType(
+            Loc, PointeeTy,
+            S.PDiag(diag::err_typecheck_arithmetic_incomplete_type)
+              << PointeeTy << Operand->getSourceRange()))
+        return false;
+    }
+  }
+  return true;
+}
+
 QualType Sema::CheckAdditionOperands( // C99 6.5.6
   ExprResult &lex, ExprResult &rex, SourceLocation Loc, QualType* CompLHSTy) {
   if (lex.get()->getType()->isVectorType() || rex.get()->getType()->isVectorType()) {
@@ -5856,42 +5995,12 @@ QualType Sema::CheckAdditionOperands( // C99 6.5.6
     std::swap(PExp, IExp);
 
   if (PExp->getType()->isAnyPointerType()) {
-
     if (IExp->getType()->isIntegerType()) {
+      if (!checkArithmeticOpPointerOperand(*this, Loc, PExp))
+        return QualType();
+
       QualType PointeeTy = PExp->getType()->getPointeeType();
 
-      // Check for arithmetic on pointers to incomplete types.
-      if (PointeeTy->isVoidType()) {
-        if (getLangOptions().CPlusPlus) {
-          Diag(Loc, diag::err_typecheck_pointer_arith_void_type)
-            << lex.get()->getSourceRange() << rex.get()->getSourceRange();
-          return QualType();
-        }
-
-        // GNU extension: arithmetic on pointer to void
-        Diag(Loc, diag::ext_gnu_void_ptr)
-          << lex.get()->getSourceRange() << rex.get()->getSourceRange();
-      } else if (PointeeTy->isFunctionType()) {
-        if (getLangOptions().CPlusPlus) {
-          Diag(Loc, diag::err_typecheck_pointer_arith_function_type)
-            << PExp->getType() << PExp->getSourceRange();
-          return QualType();
-        }
-
-        // GNU extension: arithmetic on pointer to function
-        Diag(Loc, diag::ext_gnu_ptr_func_arith)
-          << PExp->getType() << PExp->getSourceRange();
-      } else {
-        // Check if we require a complete type.
-        if (((PExp->getType()->isPointerType() &&
-              !PExp->getType()->isDependentType()) ||
-              PExp->getType()->isObjCObjectPointerType()) &&
-             RequireCompleteType(Loc, PointeeTy,
-                           PDiag(diag::err_typecheck_arithmetic_incomplete_type)
-                             << PExp->getSourceRange()
-                             << PExp->getType()))
-          return QualType();
-      }
       // Diagnose bad cases where we step over interface counts.
       if (PointeeTy->isObjCObjectType() && LangOpts.ObjCNonFragileABI) {
         Diag(Loc, diag::err_arithmetic_nonfragile_interface)
@@ -5941,35 +6050,6 @@ QualType Sema::CheckSubtractionOperands(ExprResult &lex, ExprResult &rex,
   if (lex.get()->getType()->isAnyPointerType()) {
     QualType lpointee = lex.get()->getType()->getPointeeType();
 
-    // The LHS must be an completely-defined object type.
-
-    bool ComplainAboutVoid = false;
-    Expr *ComplainAboutFunc = 0;
-    if (lpointee->isVoidType()) {
-      if (getLangOptions().CPlusPlus) {
-        Diag(Loc, diag::err_typecheck_pointer_arith_void_type)
-          << lex.get()->getSourceRange() << rex.get()->getSourceRange();
-        return QualType();
-      }
-
-      // GNU C extension: arithmetic on pointer to void
-      ComplainAboutVoid = true;
-    } else if (lpointee->isFunctionType()) {
-      if (getLangOptions().CPlusPlus) {
-        Diag(Loc, diag::err_typecheck_pointer_arith_function_type)
-          << lex.get()->getType() << lex.get()->getSourceRange();
-        return QualType();
-      }
-
-      // GNU C extension: arithmetic on pointer to function
-      ComplainAboutFunc = lex.get();
-    } else if (!lpointee->isDependentType() &&
-               RequireCompleteType(Loc, lpointee,
-                                   PDiag(diag::err_typecheck_sub_ptr_object)
-                                     << lex.get()->getSourceRange()
-                                     << lex.get()->getType()))
-      return QualType();
-
     // Diagnose bad cases where we step over interface counts.
     if (lpointee->isObjCObjectType() && LangOpts.ObjCNonFragileABI) {
       Diag(Loc, diag::err_arithmetic_nonfragile_interface)
@@ -5979,13 +6059,8 @@ QualType Sema::CheckSubtractionOperands(ExprResult &lex, ExprResult &rex,
 
     // The result type of a pointer-int computation is the pointer type.
     if (rex.get()->getType()->isIntegerType()) {
-      if (ComplainAboutVoid)
-        Diag(Loc, diag::ext_gnu_void_ptr)
-          << lex.get()->getSourceRange() << rex.get()->getSourceRange();
-      if (ComplainAboutFunc)
-        Diag(Loc, diag::ext_gnu_ptr_func_arith)
-          << ComplainAboutFunc->getType()
-          << ComplainAboutFunc->getSourceRange();
+      if (!checkArithmeticOpPointerOperand(*this, Loc, lex.get()))
+        return QualType();
 
       if (CompLHSTy) *CompLHSTy = lex.get()->getType();
       return lex.get()->getType();
@@ -5994,33 +6069,6 @@ QualType Sema::CheckSubtractionOperands(ExprResult &lex, ExprResult &rex,
     // Handle pointer-pointer subtractions.
     if (const PointerType *RHSPTy = rex.get()->getType()->getAs<PointerType>()) {
       QualType rpointee = RHSPTy->getPointeeType();
-
-      // RHS must be a completely-type object type.
-      // Handle the GNU void* extension.
-      if (rpointee->isVoidType()) {
-        if (getLangOptions().CPlusPlus) {
-          Diag(Loc, diag::err_typecheck_pointer_arith_void_type)
-            << lex.get()->getSourceRange() << rex.get()->getSourceRange();
-          return QualType();
-        }
-
-        ComplainAboutVoid = true;
-      } else if (rpointee->isFunctionType()) {
-        if (getLangOptions().CPlusPlus) {
-          Diag(Loc, diag::err_typecheck_pointer_arith_function_type)
-            << rex.get()->getType() << rex.get()->getSourceRange();
-          return QualType();
-        }
-
-        // GNU extension: arithmetic on pointer to function
-        if (!ComplainAboutFunc)
-          ComplainAboutFunc = rex.get();
-      } else if (!rpointee->isDependentType() &&
-                 RequireCompleteType(Loc, rpointee,
-                                     PDiag(diag::err_typecheck_sub_ptr_object)
-                                       << rex.get()->getSourceRange()
-                                       << rex.get()->getType()))
-        return QualType();
 
       if (getLangOptions().CPlusPlus) {
         // Pointee types must be the same: C++ [expr.add]
@@ -6042,13 +6090,9 @@ QualType Sema::CheckSubtractionOperands(ExprResult &lex, ExprResult &rex,
         }
       }
 
-      if (ComplainAboutVoid)
-        Diag(Loc, diag::ext_gnu_void_ptr)
-          << lex.get()->getSourceRange() << rex.get()->getSourceRange();
-      if (ComplainAboutFunc)
-        Diag(Loc, diag::ext_gnu_ptr_func_arith)
-          << ComplainAboutFunc->getType()
-          << ComplainAboutFunc->getSourceRange();
+      if (!checkArithmeticBinOpPointerOperands(*this, Loc,
+                                               lex.get(), rex.get()))
+        return QualType();
 
       if (CompLHSTy) *CompLHSTy = lex.get()->getType();
       return Context.getPointerDiffType();
@@ -7055,29 +7099,9 @@ static QualType CheckIncrementDecrementOperand(Sema &S, Expr *Op,
     QualType PointeeTy = ResType->getPointeeType();
 
     // C99 6.5.2.4p2, 6.5.6p2
-    if (PointeeTy->isVoidType()) {
-      if (S.getLangOptions().CPlusPlus) {
-        S.Diag(OpLoc, diag::err_typecheck_pointer_arith_void_type)
-          << Op->getSourceRange();
-        return QualType();
-      }
-
-      // Pointer to void is a GNU extension in C.
-      S.Diag(OpLoc, diag::ext_gnu_void_ptr) << Op->getSourceRange();
-    } else if (PointeeTy->isFunctionType()) {
-      if (S.getLangOptions().CPlusPlus) {
-        S.Diag(OpLoc, diag::err_typecheck_pointer_arith_function_type)
-          << Op->getType() << Op->getSourceRange();
-        return QualType();
-      }
-
-      S.Diag(OpLoc, diag::ext_gnu_ptr_func_arith)
-        << ResType << Op->getSourceRange();
-    } else if (S.RequireCompleteType(OpLoc, PointeeTy,
-                 S.PDiag(diag::err_typecheck_arithmetic_incomplete_type)
-                             << Op->getSourceRange()
-                             << ResType))
+    if (!checkArithmeticOpPointerOperand(S, OpLoc, Op))
       return QualType();
+
     // Diagnose bad cases where we step over interface counts.
     else if (PointeeTy->isObjCObjectType() && S.LangOpts.ObjCNonFragileABI) {
       S.Diag(OpLoc, diag::err_arithmetic_nonfragile_interface)

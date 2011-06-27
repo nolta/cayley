@@ -7044,9 +7044,13 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
                                         AllocType,
                                         AllocTypeInfo,
                                         ArraySize.get(),
-                                        /*FIXME:*/E->getLocStart(),
+                                        /*FIXME:*/E->hasInitializer()
+                                          ? E->getLocStart()
+                                          : SourceLocation(),
                                         move_arg(ConstructorArgs),
-                                        E->getLocEnd());
+                                        /*FIXME:*/E->hasInitializer()
+                                          ? E->getLocEnd()
+                                          : SourceLocation());
 }
 
 template<typename Derived>
