@@ -6,7 +6,8 @@ layout: default
 [Cayley](http://github.com/nolta/cayley)
 ========================================
 
-Cayley is an experimental superset of the C language.
+Cayley is an experimental set of extensions to the C language, intended to
+simplify numerical programming.
 
 Slices, a.k.a. multidimensional pointers
 ----------------------------------------
@@ -21,67 +22,67 @@ but allow for multiple indicies:
     c = vector[k];
     d = matrix[i,j];
 
-Example
--------
-
-{% highlight c %}
-//
-// slice.cy
-//
-
-#include <stdio.h>
-#include <stdlib.h>
-
-void
-print_matrix(dbl $$matrix)
-{
-    int n1 = __slice_dim1 matrix;
-    int n2 = __slice_dim2 matrix;
-
-    printf("print_matrix(d/[%d,%d])\n", n1, n2);
-
-    for (int i = 0; i < n1; i++) {
-        for (int j = 0; j != n2; j++) {
-            printf("%5g", matrix[i,j]);
-        }
-        printf("\n");
-    }
-}
-
-int
-main(int argc, char *argv[])
-{
-    const int n1 = 3, n2 = 2;
-    dbl *d, $$matrix;
-
-    d = (dbl *) malloc(n1*n2*sizeof(dbl));
-    for (int i = 0, e = n1*n2; i != e; ++i)
-      d[i] = i;
-
-    print_matrix(d/[n1,n2]);
-    print_matrix(d/[n2,n1]);
-
-    free(d);
-}
-{% endhighlight %}
-
-Output:
-
-    print_matrix(d/[3,2])
-        0    1
-        2    3
-        4    5
-    print_matrix(d/[2,3])
-        0    1    2
-        3    4    5
-
-Contact
--------
-
-Mike Nolta (mike@nolta.net)
-
-Download
+Examples
 --------
 
-    $ git clone git://github.com/nolta/cayley
+A safer version of strcpy:
 
+    char $
+    slicecpy( char $ dst, const char $ src )
+    {
+        unsigned i;
+        for (i = 0; i < __slice_dim1 dst - 1; ++i)
+        {
+            if (src[i] != '\0')
+                dst[i] = src[i];
+            else
+                break;
+        }
+        dst[i] = '\0';
+        return dst;
+    }
+
+A simple matrix multiplier:
+
+    void
+    simple_matmul( double $$c, const double $$a, const double $$b )
+    {
+        unsigned m = __slice_dim1 c;
+        unsigned n = __slice_dim2 c;
+        unsigned o = __slice_dim2 a;
+        assert(m == __slice_dim1 a);
+        assert(n == __slice_dim2 b);
+        assert(o == __slice_dim1 b);
+
+        for (unsigned i = 0; i < m; ++i)
+        for (unsigned j = 0; j < n; ++j)
+        {
+            c[i,j] = 0.;
+            for (unsigned k = 0; k < o; ++k)
+                c[i,j] += a[i,k]*b[k,j];
+        }
+    }
+
+Compiler
+--------
+
+I've hacked up a version of [Clang](http://http://clang.llvm.org/), the LLVM
+C/C++/Obj-C compiler, with support for slices.
+
+1. Checkout LLVM:
+
+    $ svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm
+
+2. Checkout Clang+Cayley:
+
+    $ cd llvm/tools
+    $ git clone git://github.com/nolta/cayley clang
+
+3. Build:
+
+    $ mkdir /path/to/llvm-build
+    $ cd /path/to/llvm-build
+    $ /path/to/llvm/configure
+    $ make
+
+Cayley source files have the extension `.cy`.
