@@ -390,10 +390,11 @@ SlicePairTy SliceExprEmitter::EmitSliceToSliceCast(SlicePairTy Val,
   assert(SrcST->getNumDims() == DestST->getNumDims() && "num dims mismatch");
 
   // Convert the pointer
-  Val.first = CGF.EmitScalarConversion(Val.first, SrcST->getPointeeType(),
-                                       DestST->getPointeeType());
-  // FIXME: decide what to do with Val.second
-  //Val.second = CGF.EmitScalarConversion(Val.second, SrcType, DestType);
+  Val.first = CGF.EmitScalarConversion(Val.first,
+          CGF.getContext().getPointerType(SrcST->getPointeeType()),
+          CGF.getContext().getPointerType(DestST->getPointeeType()));
+
+  // Val.second is unmodified
   return Val;
 }
 
