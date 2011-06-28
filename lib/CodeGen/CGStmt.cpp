@@ -1563,6 +1563,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
   for (unsigned i = 0, e = S.getNumClobbers(); i != e; i++) {
     llvm::StringRef Clobber = S.getClobber(i)->getString();
 
+    if (Clobber != "memory" && Clobber != "cc")
     Clobber = Target.getNormalizedGCCRegisterName(Clobber);
 
     if (i != 0 || NumConstraints != 0)
