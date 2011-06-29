@@ -3182,7 +3182,15 @@ void TypoCorrectionConsumer::addCorrection(TypoCorrection Correction) {
   TypoResultsMap *& Map = BestResults[Correction.getEditDistance()];
   if (!Map)
     Map = new TypoResultsMap;
-  (*Map)[Name] = Correction;
+
+  TypoCorrection &CurrentCorrection = (*Map)[Name];
+  if (!CurrentCorrection ||
+      // FIXME: The following should be rolled up into an operator< on
+      // TypoCorrection with a more principled definition.
+      CurrentCorrection.isKeyword() < Correction.isKeyword() ||
+      Correction.getAsString(SemaRef.getLangOptions()) <
+      CurrentCorrection.getAsString(SemaRef.getLangOptions()))
+    CurrentCorrection = Correction;
 
   while (BestResults.size() > MaxTypoDistanceResultSets) {
     TypoEditDistanceMap::iterator Last = BestResults.end();
@@ -3241,6 +3249,7 @@ class NamespaceSpecifierSet {
 }
 
 DeclContextList NamespaceSpecifierSet::BuildContextChain(DeclContext *Start) {
+  assert(Start && "Bulding a context chain from a null context");
   DeclContextList Chain;
   for (DeclContext *DC = Start->getPrimaryContext(); DC != NULL;
        DC = DC->getLookupParent()) {
@@ -3271,7 +3280,7 @@ void NamespaceSpecifierSet::SortNamespaces() {
 }
 
 void NamespaceSpecifierSet::AddNamespace(NamespaceDecl *ND) {
-  DeclContext *Ctx = dyn_cast<DeclContext>(ND);
+  DeclContext *Ctx = cast<DeclContext>(ND);
   NestedNameSpecifier *NNS = NULL;
   unsigned NumSpecifiers = 0;
   DeclContextList NamespaceDeclChain(BuildContextChain(Ctx));
@@ -3279,7 +3288,8 @@ void NamespaceSpecifierSet::AddNamespace(NamespaceDecl *ND) {
   // Eliminate common elements from the two DeclContext chains
   for (DeclContextList::reverse_iterator C = CurContextChain.rbegin(),
                                       CEnd = CurContextChain.rend();
-       C != CEnd && NamespaceDeclChain.back() == *C; ++C) {
+       C != CEnd && !NamespaceDeclChain.empty() &&
+       NamespaceDeclChain.back() == *C; ++C) {
     NamespaceDeclChain.pop_back();
   }
 
