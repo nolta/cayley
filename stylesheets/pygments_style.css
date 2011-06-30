@@ -1,7 +1,7 @@
 .highlight .hll { background-color: #ffffcc }
 .highlight  { }
 .highlight .c { }
-.highlight .err { border: 1px solid #FF0000 } /* Error */
+.highlight .err { background: #ffc; } /* Error */
 .highlight .k { color: #007020; font-weight: bold } /* Keyword */
 .highlight .o { color: #666666 } /* Operator */
 .highlight .cm { color: #60a0b0; font-style: italic } /* Comment.Multiline */
