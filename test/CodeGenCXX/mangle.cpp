@@ -748,8 +748,57 @@ namespace test30 {
 
   void test() {
     A<B>::foo<int>(0);
-    // FIXME: it's not clear what this mangling should be;  maybe this?
-    //   call void @_ZN6test301AINS_1BEE3fooIiEEvDTclsrS1_IT_EE2fnEE(
-    // Currently it's 1B instead of S1_.
+    // CHECK: call void @_ZN6test301AINS_1BEE3fooIiEEvDTclsrS1_IT_EE2fnEE(
+  }
+}
+
+namespace test31 { // instantiation-dependent mangling of decltype
+  int x;
+  template<class T> auto f1(T p)->decltype(x) { return 0; }
+  // The return type in the mangling of the template signature
+  // is encoded as "i".
+  template<class T> auto f2(T p)->decltype(p) { return 0; }
+  // The return type in the mangling of the template signature
+  // is encoded as "Dtfp_E".
+  void g(int);
+  template<class T> auto f3(T p)->decltype(g(p)) {}
+
+  // CHECK: define weak_odr i32 @_ZN6test312f1IiEEiT_(
+  template int f1(int);
+  // CHECK: define weak_odr i32 @_ZN6test312f2IiEEDtfp_ET_
+  template int f2(int);
+  // CHECK: define weak_odr void @_ZN6test312f3IiEEDTcl1gfp_EET_
+  template void f3(int);
+}
+
+// PR10205
+namespace test32 {
+  template<typename T, int=T::value> struct A {
+    typedef int type;
+  };
+  struct B { enum { value = 4 }; };
+
+  template <class T> typename A<T>::type foo() { return 0; }
+  void test() {
+    foo<B>();
+    // CHECK: call i32 @_ZN6test323fooINS_1BEEENS_1AIT_XsrS3_5valueEE4typeEv()
+  }
+}
+
+namespace test33 {
+  template <class T> struct X {
+    enum { value = T::value };
+  };
+
+  template<typename T, int=X<T>::value> struct A {
+    typedef int type;
+  };
+  struct B { enum { value = 4 }; };
+
+  template <class T> typename A<T>::type foo() { return 0; }
+
+  void test() {
+    foo<B>();
+    // CHECK: call i32 @_ZN6test333fooINS_1BEEENS_1AIT_Xsr1XIS3_EE5valueEE4typeEv()
   }
 }

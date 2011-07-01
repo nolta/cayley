@@ -32,11 +32,15 @@ using namespace clang;
 /// Called type-id in C++.
 TypeResult Parser::ParseTypeName(SourceRange *Range,
                                  Declarator::TheContext Context,
-                                 ObjCDeclSpec *objcQuals) {
+                                 ObjCDeclSpec *objcQuals,
+                                 AccessSpecifier AS,
+                                 Decl **OwnedType) {
   // Parse the common declaration-specifiers piece.
   DeclSpec DS(AttrFactory);
   DS.setObjCQualifiers(objcQuals);
-  ParseSpecifierQualifierList(DS);
+  ParseSpecifierQualifierList(DS, AS);
+  if (OwnedType)
+    *OwnedType = DS.isTypeSpecOwned() ? DS.getRepAsDecl() : 0;
 
   // Parse the abstract-declarator, if present.
   Declarator DeclaratorInfo(DS, Context);
@@ -675,6 +679,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(StmtVector &Stmts,
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
   
   Decl *SingleDecl = 0;
+  Decl *OwnedType = 0;
   switch (Tok.getKind()) {
   case tok::kw_template:
   case tok::kw_export:
@@ -697,7 +702,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(StmtVector &Stmts,
     break;
   case tok::kw_using:
     SingleDecl = ParseUsingDirectiveOrDeclaration(Context, ParsedTemplateInfo(),
-                                                  DeclEnd, attrs);
+                                                  DeclEnd, attrs, &OwnedType);
     break;
   case tok::kw_static_assert:
   case tok::kw__Static_assert:
@@ -709,8 +714,9 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(StmtVector &Stmts,
   }
   
   // This routine returns a DeclGroup, if the thing we parsed only contains a
-  // single decl, convert it now.
-  return Actions.ConvertDeclToDeclGroup(SingleDecl);
+  // single decl, convert it now. Alias declarations can also declare a type;
+  // include that too if it is present.
+  return Actions.ConvertDeclToDeclGroup(SingleDecl, OwnedType);
 }
 
 ///       simple-declaration: [C99 6.7: declaration] [C++ 7p1: dcl.dcl]
@@ -1082,10 +1088,10 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(Declarator &D,
 ///          type-qualifier specifier-qualifier-list[opt]
 /// [GNU]    attributes     specifier-qualifier-list[opt]
 ///
-void Parser::ParseSpecifierQualifierList(DeclSpec &DS) {
+void Parser::ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS) {
   /// specifier-qualifier-list is a subset of declaration-specifiers.  Just
   /// parse declaration-specifiers and complain about extra stuff.
-  ParseDeclarationSpecifiers(DS);
+  ParseDeclarationSpecifiers(DS, ParsedTemplateInfo(), AS);
 
   // Validate declspec for type-name.
   unsigned Specs = DS.getParsedSpecifiers();

@@ -237,6 +237,9 @@ private:
   bool mangleSubstitution(TemplateName Template);
   bool mangleSubstitution(uintptr_t Ptr);
 
+  void mangleExistingSubstitution(QualType type);
+  void mangleExistingSubstitution(TemplateName name);
+
   bool mangleStandardSubstitution(const NamedDecl *ND);
 
   void addSubstitution(const NamedDecl *ND) {
@@ -770,8 +773,6 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     }
 
     // Only certain other types are valid as prefixes;  enumerate them.
-    // FIXME: can we get ElaboratedTypes here?
-    // FIXME: SubstTemplateTypeParmType?
     switch (type->getTypeClass()) {
     case Type::Builtin:
     case Type::Complex:
@@ -795,11 +796,18 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     case Type::Attributed:
     case Type::Auto:
     case Type::PackExpansion:
-    case Type::SubstTemplateTypeParmPack:
     case Type::ObjCObject:
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
       llvm_unreachable("type is illegal as a nested name specifier");
+
+    case Type::SubstTemplateTypeParmPack:
+      // FIXME: not clear how to mangle this!
+      // template <class T...> class A {
+      //   template <class U...> void foo(decltype(T::foo(U())) x...);
+      // };
+      Out << "_SUBSTPACK_";
+      break;
 
     // <unresolved-type> ::= <template-param>
     //                   ::= <decltype>
@@ -810,30 +818,20 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     case Type::Decltype:
     case Type::TemplateTypeParm:
     case Type::UnaryTransform:
+    case Type::SubstTemplateTypeParm:
     unresolvedType:
       assert(!qualifier->getPrefix());
 
       // We only get here recursively if we're followed by identifiers.
       if (recursive) Out << 'N';
 
-      // This seems to do everything we want.
+      // This seems to do everything we want.  It's not really
+      // sanctioned for a substituted template parameter, though.
       mangleType(QualType(type, 0));
 
       // We never want to print 'E' directly after an unresolved-type,
       // so we return directly.
       return;
-
-    // Substituted template type parameters should only come up with
-    // enclosing templates.
-    // <unresolved-type> ::= <existing-substitution> [ <template-args> ]
-    case Type::SubstTemplateTypeParm: {
-      if (recursive) Out << 'N';
-
-      bool wasSubstituted = mangleSubstitution(QualType(type, 0));
-      assert(wasSubstituted && "no substitution for outer template argument?");
-      (void) wasSubstituted;
-      return;
-    }
 
     case Type::Typedef:
       mangleSourceName(cast<TypedefType>(type)->getDecl()->getIdentifier());
@@ -851,14 +849,42 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     case Type::TemplateSpecialization: {
       const TemplateSpecializationType *tst
         = cast<TemplateSpecializationType>(type);
-      TemplateDecl *temp = tst->getTemplateName().getAsTemplateDecl();
+      TemplateName name = tst->getTemplateName();
+      switch (name.getKind()) {
+      case TemplateName::Template:
+      case TemplateName::QualifiedTemplate: {
+        TemplateDecl *temp = name.getAsTemplateDecl();
 
-      // If the base is a template template parameter, this is an
-      // unresolved type.
-      assert(temp && "no template for template specialization type");
-      if (isa<TemplateTemplateParmDecl>(temp)) goto unresolvedType;
+        // If the base is a template template parameter, this is an
+        // unresolved type.
+        assert(temp && "no template for template specialization type");
+        if (isa<TemplateTemplateParmDecl>(temp)) goto unresolvedType;
 
-      mangleSourceName(temp->getIdentifier());
+        mangleSourceName(temp->getIdentifier());
+        break;
+      }
+
+      case TemplateName::OverloadedTemplate:
+      case TemplateName::DependentTemplate:
+        llvm_unreachable("invalid base for a template specialization type");
+
+      case TemplateName::SubstTemplateTemplateParm: {
+        SubstTemplateTemplateParmStorage *subst
+          = name.getAsSubstTemplateTemplateParm();
+        mangleExistingSubstitution(subst->getReplacement());
+        break;
+      }
+
+      case TemplateName::SubstTemplateTemplateParmPack: {
+        // FIXME: not clear how to mangle this!
+        // template <template <class U> class T...> class A {
+        //   template <class U...> void foo(decltype(T<U>::foo) x...);
+        // };
+        Out << "_SUBSTPACK_";
+        break;
+      }
+      }
+
       mangleUnresolvedTemplateArgs(tst->getArgs(), tst->getNumArgs());
       break;
     }
@@ -1369,14 +1395,23 @@ void CXXNameMangler::mangleType(TemplateName TN) {
     break;
   }
 
-  case TemplateName::SubstTemplateTemplateParm:
-    llvm_unreachable("mangling a substituted template name!");
-    break;
+  case TemplateName::SubstTemplateTemplateParm: {
+    // Substituted template parameters are mangled as the substituted
+    // template.  This will check for the substitution twice, which is
+    // fine, but we have to return early so that we don't try to *add*
+    // the substitution twice.
+    SubstTemplateTemplateParmStorage *subst
+      = TN.getAsSubstTemplateTemplateParm();
+    mangleType(subst->getReplacement());
+    return;
+  }
 
   case TemplateName::SubstTemplateTemplateParmPack: {
-    SubstTemplateTemplateParmPackStorage *SubstPack
-      = TN.getAsSubstTemplateTemplateParmPack();
-    mangleTemplateParameter(SubstPack->getParameterPack()->getIndex());
+    // FIXME: not clear how to mangle this!
+    // template <template <class> class T...> class A {
+    //   template <template <class> class U...> void foo(B<T,U> x...);
+    // };
+    Out << "_SUBSTPACK_";
     break;
   }
   }
@@ -1820,7 +1855,11 @@ void CXXNameMangler::mangleType(const TemplateTypeParmType *T) {
 
 // <type>           ::= <template-param>
 void CXXNameMangler::mangleType(const SubstTemplateTypeParmPackType *T) {
-  mangleTemplateParameter(T->getReplacedParameter()->getIndex());
+  // FIXME: not clear how to mangle this!
+  // template <class T...> class A {
+  //   template <class U...> void foo(T(*)(U) x...);
+  // };
+  Out << "_SUBSTPACK_";
 }
 
 // <type> ::= P <type>   # pointer-to
@@ -2510,8 +2549,11 @@ void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
   }
 
   case Expr::SubstNonTypeTemplateParmPackExprClass:
-    mangleTemplateParameter(
-     cast<SubstNonTypeTemplateParmPackExpr>(E)->getParameterPack()->getIndex());
+    // FIXME: not clear how to mangle this!
+    // template <unsigned N...> class A {
+    //   template <class U...> void foo(U (&x)[N]...);
+    // };
+    Out << "_SUBSTPACK_";
     break;
       
   case Expr::DependentScopeDeclRefExprClass: {
@@ -2869,6 +2911,18 @@ void CXXNameMangler::mangleTemplateParameter(unsigned Index) {
     Out << "T_";
   else
     Out << 'T' << (Index - 1) << '_';
+}
+
+void CXXNameMangler::mangleExistingSubstitution(QualType type) {
+  bool result = mangleSubstitution(type);
+  assert(result && "no existing substitution for type");
+  (void) result;
+}
+
+void CXXNameMangler::mangleExistingSubstitution(TemplateName tname) {
+  bool result = mangleSubstitution(tname);
+  assert(result && "no existing substitution for template name");
+  (void) result;
 }
 
 // <substitution> ::= S <seq-id> _
