@@ -1888,6 +1888,7 @@ class SliceType : public Type, public llvm::FoldingSetNode {
 
   SliceType(QualType Pointee, QualType CanonicalPtr, unsigned NumDims) :
     Type(Slice, CanonicalPtr, Pointee->isDependentType(),
+         Pointee->isInstantiationDependentType(),
          Pointee->isVariablyModifiedType(),
          Pointee->containsUnexpandedParameterPack()),
     PointeeType(Pointee), NumDims(NumDims) {

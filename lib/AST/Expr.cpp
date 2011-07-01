@@ -706,6 +706,7 @@ ArraySubscriptsExpr::ArraySubscriptsExpr(ASTContext& C, Expr *lhs, Expr **args,
   : Expr(ArraySubscriptsExprClass, t, VK, OK,
          lhs->isTypeDependent(),
          lhs->isValueDependent(),
+         lhs->isInstantiationDependent(),
          lhs->containsUnexpandedParameterPack()),
     NumArgs(numargs), RBracketLoc(rbracketloc) {
 
@@ -716,6 +717,8 @@ ArraySubscriptsExpr::ArraySubscriptsExpr(ASTContext& C, Expr *lhs, Expr **args,
       ExprBits.TypeDependent = true;
     if (args[i]->isValueDependent())
       ExprBits.ValueDependent = true;
+    if (args[i]->isInstantiationDependent())
+      ExprBits.InstantiationDependent = true;
     if (args[i]->containsUnexpandedParameterPack())
       ExprBits.ContainsUnexpandedParameterPack = true;
 
@@ -757,6 +760,7 @@ SliceExpr::SliceExpr(ASTContext& C, Expr *lhs, Expr **args,
   : Expr(SliceExprClass, t, VK, OK,
          lhs->isTypeDependent(),
          lhs->isValueDependent(),
+         lhs->isInstantiationDependent(),
          lhs->containsUnexpandedParameterPack()),
     NumArgs(numargs), RBracketLoc(rbracketloc) {
 
@@ -767,6 +771,8 @@ SliceExpr::SliceExpr(ASTContext& C, Expr *lhs, Expr **args,
       ExprBits.TypeDependent = true;
     if (args[i]->isValueDependent())
       ExprBits.ValueDependent = true;
+    if (args[i]->isInstantiationDependent())
+      ExprBits.InstantiationDependent = true;
     if (args[i]->containsUnexpandedParameterPack())
       ExprBits.ContainsUnexpandedParameterPack = true;
 
