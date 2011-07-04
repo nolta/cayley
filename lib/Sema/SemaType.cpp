@@ -1987,11 +1987,11 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     case DeclaratorChunk::Slice:
       // If slices are disabled, emit an error.
       if (!LangOpts.Cayley)
-        Diag(DeclType.Loc, diag::err_slices_disable);
+        S.Diag(DeclType.Loc, diag::err_slices_disable);
 
-      T = BuildSliceType(T, DeclType.Slc.NumDims, D.getIdentifierLoc(), Name);
+      T = S.BuildSliceType(T, DeclType.Slc.NumDims, D.getIdentifierLoc(), Name);
       if (DeclType.Slc.TypeQuals)
-        T = BuildQualifiedType(T, DeclType.Loc, DeclType.Slc.TypeQuals);
+        T = S.BuildQualifiedType(T, DeclType.Loc, DeclType.Slc.TypeQuals);
       break;
     case DeclaratorChunk::Pointer:
       // Verify that we're not building a pointer to pointer to function with
