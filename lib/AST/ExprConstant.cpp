@@ -2893,6 +2893,8 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
     case UO_Not:
     case UO_Real:
     case UO_Imag:
+    case UO_SliceDim1:
+    case UO_SliceDim2:
       return CheckICE(Exp->getSubExpr(), Ctx);
     }
     
