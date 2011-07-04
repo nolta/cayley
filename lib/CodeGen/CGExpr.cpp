@@ -1380,11 +1380,12 @@ LValue CodeGenFunction::EmitBlockDeclRefLValue(const BlockDeclRefExpr *E) {
 
 LValue CodeGenFunction::EmitSliceDimLValue(const UnaryOperator *E, unsigned Dim) {
   LValue LV = EmitLValue(E->getSubExpr());
-  assert(LV.isSimple() && "real/imag on non-ordinary l-value");
+  assert(LV.isSimple() && "slice_dim on non-ordinary l-value");
   llvm::Value *Addr = LV.getAddress();
 
   assert(E->getSubExpr()->getType()->isSliceType());
   const SliceType *STy = cast<SliceType>(E->getSubExpr()->getType());
+  assert(STy->getNumDims() >= Dim);
 
   Addr = Builder.CreateStructGEP(Addr, 1, "arr");
   Builder.CreateLoad(Addr);
