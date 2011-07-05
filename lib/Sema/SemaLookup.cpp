@@ -3232,7 +3232,8 @@ class NamespaceSpecifierSet {
 
  public:
   explicit NamespaceSpecifierSet(ASTContext &Context, DeclContext *CurContext)
-      : Context(Context), CurContextChain(BuildContextChain(CurContext)) {}
+      : Context(Context), CurContextChain(BuildContextChain(CurContext)),
+        isSorted(true) {}
 
   /// \brief Add the namespace to the set, computing the corresponding
   /// NestedNameSpecifier and its distance in the process.

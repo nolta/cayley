@@ -674,7 +674,8 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
   }
 
   // Target properties.
-  Builder.defineMacro("_BIG_ENDIAN");
+  if (getTriple().getOS() != llvm::Triple::NetBSD)
+    Builder.defineMacro("_BIG_ENDIAN");
   Builder.defineMacro("__BIG_ENDIAN__");
 
   // Subtarget options.
@@ -802,8 +803,14 @@ public:
     DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
                         "i64:64:64-f32:32:32-f64:64:64-v128:128:128-n32";
 
-    if (getTriple().getOS() == llvm::Triple::FreeBSD)
-        SizeType = UnsignedInt;
+    switch (getTriple().getOS()) {
+    case llvm::Triple::FreeBSD:
+    case llvm::Triple::NetBSD:
+      SizeType = UnsignedInt;
+      break;
+    default:
+      break;
+    }
   }
 
   virtual const char *getVAListDeclaration() const {
@@ -2813,6 +2820,8 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new LinuxTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::FreeBSD:
       return new FreeBSDTargetInfo<ARMTargetInfo>(T);
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::RTEMS:
       return new RTEMSTargetInfo<ARMTargetInfo>(T);
     default:
@@ -2828,40 +2837,64 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     return new MSP430TargetInfo(T);
 
   case llvm::Triple::mips:
-    if (os == llvm::Triple::Psp)
+    switch (os) {
+    case llvm::Triple::Psp:
       return new PSPTargetInfo<MipsTargetInfo>(T);
-    if (os == llvm::Triple::Linux)
+    case llvm::Triple::Linux:
       return new LinuxTargetInfo<MipsTargetInfo>(T);
-    if (os == llvm::Triple::RTEMS)
+    case llvm::Triple::RTEMS:
       return new RTEMSTargetInfo<MipsTargetInfo>(T);
-    return new MipsTargetInfo(T);
+    case llvm::Triple::FreeBSD:
+      return new NetBSDTargetInfo<MipsTargetInfo>(T);
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<MipsTargetInfo>(T);
+    default:
+      return new MipsTargetInfo(T);
+    }
 
   case llvm::Triple::mipsel:
-    if (os == llvm::Triple::Psp)
+    switch (os) {
+    case llvm::Triple::Psp:
       return new PSPTargetInfo<MipselTargetInfo>(T);
-    if (os == llvm::Triple::Linux)
+    case llvm::Triple::Linux:
       return new LinuxTargetInfo<MipselTargetInfo>(T);
-    if (os == llvm::Triple::RTEMS)
+    case llvm::Triple::RTEMS:
       return new RTEMSTargetInfo<MipselTargetInfo>(T);
-    return new MipselTargetInfo(T);
+    case llvm::Triple::FreeBSD:
+      return new NetBSDTargetInfo<MipselTargetInfo>(T);
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<MipselTargetInfo>(T);
+    default:
+      return new MipsTargetInfo(T);
+    }
 
   case llvm::Triple::ppc:
     if (Triple.isOSDarwin())
       return new DarwinPPC32TargetInfo(T);
-    else if (os == llvm::Triple::FreeBSD)
+    switch (os) {
+    case llvm::Triple::FreeBSD:
       return new FreeBSDTargetInfo<PPC32TargetInfo>(T);
-    if ( os == llvm::Triple::RTEMS )
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<PPC32TargetInfo>(T);
+    case llvm::Triple::RTEMS:
       return new RTEMSTargetInfo<PPC32TargetInfo>(T);
-    return new PPC32TargetInfo(T);
+    default:
+      return new PPC32TargetInfo(T);
+    }
 
   case llvm::Triple::ppc64:
     if (Triple.isOSDarwin())
       return new DarwinPPC64TargetInfo(T);
-    else if (os == llvm::Triple::Lv2)
+    switch (os) {
+    case llvm::Triple::Lv2:
       return new PS3PPUTargetInfo<PPC64TargetInfo>(T);
-    else if (os == llvm::Triple::FreeBSD)
+    case llvm::Triple::FreeBSD:
       return new FreeBSDTargetInfo<PPC64TargetInfo>(T);
-    return new PPC64TargetInfo(T);
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<PPC64TargetInfo>(T);
+    default:
+      return new PPC64TargetInfo(T);
+    }
 
   case llvm::Triple::ptx32:
     return new PTX32TargetInfo(T);
@@ -2872,13 +2905,18 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     return new MBlazeTargetInfo(T);
 
   case llvm::Triple::sparc:
-    if (os == llvm::Triple::AuroraUX)
+    switch (os) {
+    case llvm::Triple::AuroraUX:
       return new AuroraUXSparcV8TargetInfo(T);
-    if (os == llvm::Triple::Solaris)
+    case llvm::Triple::Solaris:
       return new SolarisSparcV8TargetInfo(T);
-    if ( os == llvm::Triple::RTEMS )
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<SparcV8TargetInfo>(T);
+    case llvm::Triple::RTEMS:
       return new RTEMSTargetInfo<SparcV8TargetInfo>(T);
-    return new SparcV8TargetInfo(T);
+    default:
+      return new SparcV8TargetInfo(T);
+    }
 
   // FIXME: Need a real SPU target.
   case llvm::Triple::cellspu:
