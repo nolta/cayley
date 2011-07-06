@@ -193,6 +193,9 @@ public:
   Diagnostic &Diags;
   SourceManager &SourceMgr;
 
+  /// \brief Flag indicating whether or not to collect detailed statistics.
+  bool CollectStats;
+
   /// \brief Source of additional semantic information.
   ExternalSemaSource *ExternalSource;
 
@@ -689,7 +692,9 @@ public:
   ASTContext &getASTContext() const { return Context; }
   ASTConsumer &getASTConsumer() const { return Consumer; }
   ASTMutationListener *getASTMutationListener() const;
-  
+
+  void PrintStats() const;
+
   /// \brief Helper class that creates diagnostics with optional
   /// template instantiation stacks.
   ///
@@ -4846,7 +4851,7 @@ public:
                    bool Complain = true);
 
   void InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
-                        Decl *Pattern, Decl *Inst);
+                        const Decl *Pattern, Decl *Inst);
 
   bool
   InstantiateClassTemplateSpecialization(SourceLocation PointOfInstantiation,
@@ -5856,8 +5861,6 @@ public:
   void GatherGlobalCodeCompletions(CodeCompletionAllocator &Allocator,
                   llvm::SmallVectorImpl<CodeCompletionResult> &Results);
   //@}
-
-  void PrintStats() const {}
 
   //===--------------------------------------------------------------------===//
   // Extra semantic analysis beyond the C type system

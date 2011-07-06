@@ -2594,9 +2594,9 @@ unsigned clang_defaultSaveOptions(CXTranslationUnit TU) {
 int clang_saveTranslationUnit(CXTranslationUnit TU, const char *FileName,
                               unsigned options) {
   if (!TU)
-    return 1;
+    return CXSaveError_InvalidTU;
   
-  int result = static_cast<ASTUnit *>(TU->TUData)->Save(FileName);
+  CXSaveError result = static_cast<ASTUnit *>(TU->TUData)->Save(FileName);
   if (getenv("LIBCLANG_RESOURCE_USAGE"))
     PrintLibclangResourceUsage(TU);
   return result;
@@ -3560,6 +3560,10 @@ unsigned clang_isExpression(enum CXCursorKind K) {
 
 unsigned clang_isStatement(enum CXCursorKind K) {
   return K >= CXCursor_FirstStmt && K <= CXCursor_LastStmt;
+}
+
+unsigned clang_isAttribute(enum CXCursorKind K) {
+    return K >= CXCursor_FirstAttr && K <= CXCursor_LastAttr;
 }
 
 unsigned clang_isTranslationUnit(enum CXCursorKind K) {

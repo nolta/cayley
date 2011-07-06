@@ -3235,9 +3235,9 @@ static bool handleObjCOwnershipTypeAttr(TypeProcessingState &state,
     type = S.Context.getAttributedType(AttributedType::attr_objc_ownership,
                                        origType, type);
 
-  // Forbid __weak if we don't have a runtime.
+  // Forbid __weak if the runtime doesn't support it.
   if (lifetime == Qualifiers::OCL_Weak &&
-      S.getLangOptions().ObjCNoAutoRefCountRuntime) {
+      !S.getLangOptions().ObjCRuntimeHasWeak) {
 
     // Actually, delay this until we know what we're parsing.
     if (S.DelayedDiagnostics.shouldDelayDiagnostics()) {
@@ -3251,7 +3251,23 @@ static bool handleObjCOwnershipTypeAttr(TypeProcessingState &state,
     attr.setInvalid();
     return true;
   }
-
+    
+  // Forbid __weak for class objects marked as 
+  // objc_arc_weak_reference_unavailable
+  if (lifetime == Qualifiers::OCL_Weak) {
+    QualType T = type;
+    while (const PointerType *ptr = T->getAs<PointerType>())
+      T = ptr->getPointeeType();
+    if (const ObjCObjectPointerType *ObjT = T->getAs<ObjCObjectPointerType>()) {
+      ObjCInterfaceDecl *Class = ObjT->getInterfaceDecl();
+      if (Class->isArcWeakrefUnavailable()) {
+          S.Diag(attr.getLoc(), diag::err_arc_unsupported_weak_class);
+          S.Diag(ObjT->getInterfaceDecl()->getLocation(), 
+                 diag::note_class_declared);
+      }
+    }
+  }
+  
   return true;
 }
 
