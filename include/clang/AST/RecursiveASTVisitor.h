@@ -1571,13 +1571,6 @@ bool RecursiveASTVisitor<Derived>::TraverseFunctionHelper(FunctionDecl *D) {
   // including exception specifications.
   TRY_TO(TraverseTypeLoc(D->getTypeSourceInfo()->getTypeLoc()));
 
-  // Parameter declarations
-  for (FunctionDecl::param_iterator I = D->param_begin(),
-                                    E = D->param_end();
-       I != E; ++I) {
-    TRY_TO(TraverseDecl(*I));
-  }
-
   if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
     // Constructor initializers.
     for (CXXConstructorDecl::init_iterator I = Ctor->init_begin(),
@@ -1996,6 +1989,7 @@ DEF_TRAVERSE_STMT(CXXNoexceptExpr, { })
 DEF_TRAVERSE_STMT(PackExpansionExpr, { })
 DEF_TRAVERSE_STMT(SizeOfPackExpr, { })
 DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmPackExpr, { })
+DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmExpr, { })
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, { })
 
 // These literals (all of them) do not need any action.

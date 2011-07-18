@@ -137,3 +137,7 @@ clang_toggleCrashRecovery
 clang_tokenize
 clang_visitChildren
 clang_visitChildrenWithBlock
+clang_getRemappings
+clang_remap_getNumFiles
+clang_remap_getFilenames
+clang_remap_dispose

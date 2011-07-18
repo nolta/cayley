@@ -35,6 +35,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <limits>
 #include <list>
@@ -209,6 +210,7 @@ static inline unsigned getIDNS(Sema::LookupNameKind NameKind,
                                bool Redeclaration) {
   unsigned IDNS = 0;
   switch (NameKind) {
+  case Sema::LookupObjCImplicitSelfParam:
   case Sema::LookupOrdinaryName:
   case Sema::LookupRedeclarationWithLinkage:
     IDNS = Decl::IDNS_Ordinary;
@@ -1097,7 +1099,10 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
           if (LeftStartingScope && !((*I)->hasLinkage()))
             continue;
         }
-
+        else if (NameKind == LookupObjCImplicitSelfParam &&
+                 !isa<ImplicitParamDecl>(*I))
+          continue;
+        
         R.addDecl(*I);
 
         if ((*I)->getAttr<OverloadableAttr>()) {
@@ -1381,6 +1386,7 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
   // Look for this member in our base classes
   CXXRecordDecl::BaseMatchesCallback *BaseCallback = 0;
   switch (R.getLookupKind()) {
+    case LookupObjCImplicitSelfParam:
     case LookupOrdinaryName:
     case LookupMemberName:
     case LookupRedeclarationWithLinkage:
@@ -2529,24 +2535,7 @@ public:
   /// \brief An entry in the shadow map, which is optimized to store a
   /// single declaration (the common case) but can also store a list
   /// of declarations.
-  class ShadowMapEntry {
-    typedef llvm::SmallVector<NamedDecl *, 4> DeclVector;
-
-    /// \brief Contains either the solitary NamedDecl * or a vector
-    /// of declarations.
-    llvm::PointerUnion<NamedDecl *, DeclVector*> DeclOrVector;
-
-  public:
-    ShadowMapEntry() : DeclOrVector() { }
-
-    void Add(NamedDecl *ND);
-    void Destroy();
-
-    // Iteration.
-    typedef NamedDecl * const *iterator;
-    iterator begin();
-    iterator end();
-  };
+  typedef llvm::TinyPtrVector<NamedDecl*> ShadowMapEntry;
 
 private:
   /// \brief A mapping from declaration names to the declarations that have
@@ -2580,7 +2569,9 @@ public:
   NamedDecl *checkHidden(NamedDecl *ND);
 
   /// \brief Add a declaration to the current shadow map.
-  void add(NamedDecl *ND) { ShadowMaps.back()[ND->getDeclName()].Add(ND); }
+  void add(NamedDecl *ND) {
+    ShadowMaps.back()[ND->getDeclName()].push_back(ND);
+  }
 };
 
 /// \brief RAII object that records when we've entered a shadow context.
@@ -2595,65 +2586,11 @@ public:
   }
 
   ~ShadowContextRAII() {
-    for (ShadowMap::iterator E = Visible.ShadowMaps.back().begin(),
-                          EEnd = Visible.ShadowMaps.back().end();
-         E != EEnd;
-         ++E)
-      E->second.Destroy();
-
     Visible.ShadowMaps.pop_back();
   }
 };
 
 } // end anonymous namespace
-
-void VisibleDeclsRecord::ShadowMapEntry::Add(NamedDecl *ND) {
-  if (DeclOrVector.isNull()) {
-    // 0 - > 1 elements: just set the single element information.
-    DeclOrVector = ND;
-    return;
-  }
-
-  if (NamedDecl *PrevND = DeclOrVector.dyn_cast<NamedDecl *>()) {
-    // 1 -> 2 elements: create the vector of results and push in the
-    // existing declaration.
-    DeclVector *Vec = new DeclVector;
-    Vec->push_back(PrevND);
-    DeclOrVector = Vec;
-  }
-
-  // Add the new element to the end of the vector.
-  DeclOrVector.get<DeclVector*>()->push_back(ND);
-}
-
-void VisibleDeclsRecord::ShadowMapEntry::Destroy() {
-  if (DeclVector *Vec = DeclOrVector.dyn_cast<DeclVector *>()) {
-    delete Vec;
-    DeclOrVector = ((NamedDecl *)0);
-  }
-}
-
-VisibleDeclsRecord::ShadowMapEntry::iterator
-VisibleDeclsRecord::ShadowMapEntry::begin() {
-  if (DeclOrVector.isNull())
-    return 0;
-
-  if (DeclOrVector.is<NamedDecl *>())
-    return DeclOrVector.getAddrOf<NamedDecl *>();
-
-  return DeclOrVector.get<DeclVector *>()->begin();
-}
-
-VisibleDeclsRecord::ShadowMapEntry::iterator
-VisibleDeclsRecord::ShadowMapEntry::end() {
-  if (DeclOrVector.isNull())
-    return 0;
-
-  if (DeclOrVector.is<NamedDecl *>())
-    return DeclOrVector.getAddrOf<NamedDecl *>() + 1;
-
-  return DeclOrVector.get<DeclVector *>()->end();
-}
 
 NamedDecl *VisibleDeclsRecord::checkHidden(NamedDecl *ND) {
   // Look through using declarations.
@@ -3748,6 +3685,8 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
       case LookupResult::FoundOverloaded:
       case LookupResult::FoundUnresolvedValue:
         I->second.setCorrectionDecl(TmpRes.getAsSingle<NamedDecl>());
+        // FIXME: This sets the CorrectionDecl to NULL for overloaded functions.
+        // It would be nice to find the right one with overload resolution.
         ++I;
         break;
       }
@@ -3839,7 +3778,6 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     // wasn't actually in scope.
     if (ED == 0 && Result.isKeyword()) return TypoCorrection();
 
-    assert(Result.isResolved() && "correction has not been looked up");
     // Record the correction for unqualified lookup.
     if (IsUnqualifiedLookup)
       UnqualifiedTyposCorrected[Typo] = Result;

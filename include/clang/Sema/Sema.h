@@ -760,7 +760,6 @@ public:
   // Type Analysis / Processing: SemaType.cpp.
   //
 
-  QualType adjustParameterType(QualType T);
   QualType BuildQualifiedType(QualType T, SourceLocation Loc, Qualifiers Qs);
   QualType BuildQualifiedType(QualType T, SourceLocation Loc, unsigned CVR) {
     return BuildQualifiedType(T, Loc, Qualifiers::fromCVRMask(CVR));
@@ -1608,6 +1607,8 @@ public:
     LookupRedeclarationWithLinkage,
     /// Look up the name of an Objective-C protocol.
     LookupObjCProtocolName,
+    /// Look up implicit 'self' parameter of an objective-c method.
+    LookupObjCImplicitSelfParam,
     /// \brief Look up any declaration with any name.
     LookupAnyName
   };
@@ -5434,6 +5435,10 @@ public:
     /// "id <XXX>" = "Foo *", where "Foo *" doesn't implement the XXX protocol.
     IncompatibleObjCQualifiedId,
 
+    /// IncompatibleObjCWeakRef - Assigning a weak-unavailable object to an
+    /// object with __weak qualifier.
+    IncompatibleObjCWeakRef,
+
     /// Incompatible - We reject this conversion outright, it is invalid to
     /// represent it in the AST.
     Incompatible
@@ -5630,6 +5635,9 @@ public:
   /// retainable pointers and other pointer kinds.
   void CheckObjCARCConversion(SourceRange castRange, QualType castType, 
                               Expr *&op, CheckedConversionKind CCK);
+    
+  bool CheckObjCARCUnavailableWeakConversion(QualType castType,
+                                             QualType ExprType);
 
   /// checkRetainCycles - Check whether an Objective-C message send
   /// might create an obvious retain cycle.

@@ -310,8 +310,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
         SourceLocation FILoc = Tok.getLocation();
         const char *FIText = ": ";
         const SourceManager &SM = PP.getSourceManager();
-        if (FILoc.isFileID() ||
-            SM.isAtStartOfMacroInstantiation(FILoc, getLang())) {
+        if (FILoc.isFileID() || PP.isAtStartOfMacroExpansion(FILoc)) {
           FILoc = SM.getInstantiationLoc(FILoc);
           bool IsInvalid = false;
           const char *SourcePtr =
@@ -793,7 +792,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return ParseBuiltinPrimaryExpression();
   case tok::kw___null:
     return Actions.ActOnGNUNullExpr(ConsumeToken());
-    break;
+
   case tok::plusplus:      // unary-expression: '++' unary-expression [C99]
   case tok::minusminus: {  // unary-expression: '--' unary-expression [C99]
     // C++ [expr.unary] has:
@@ -1104,17 +1103,20 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return ParseObjCAtExpression(AtLoc);
   }
   case tok::caret:
-    return ParsePostfixExpressionSuffix(ParseBlockLiteralExpression());
-  case tok::code_completion:
+    Res = ParseBlockLiteralExpression();
+    break;
+  case tok::code_completion: {
     Actions.CodeCompleteOrdinaryName(getCurScope(), Sema::PCC_Expression);
     ConsumeCodeCompletionToken();
     return ParseCastExpression(isUnaryExpression, isAddressOfOperand, 
                                NotCastExpr, isTypeCast);
+  }
   case tok::l_square:
-    // These can be followed by postfix-expr pieces.
-    if (getLang().ObjC1)
-      return ParsePostfixExpressionSuffix(ParseObjCMessageExpression());
-    // FALL THROUGH.      
+    if (getLang().ObjC1) {
+      Res = ParseObjCMessageExpression();
+      break;
+    }
+    // FALL THROUGH.
   default:
     NotCastExpr = true;
     return ExprError();
@@ -1775,7 +1777,7 @@ ExprResult Parser::ParseBuiltinPrimaryExpression() {
                                   ConsumeParen());
     break;
   }
-}
+  }
 
   if (Res.isInvalid())
     return ExprError();
@@ -2290,6 +2292,7 @@ ExprResult Parser::ParseBlockLiteralExpression() {
                                                        SourceLocation(),
                                                        0, 0, 0,
                                                        true, SourceLocation(),
+                                                       SourceLocation(),
                                                        EST_None,
                                                        SourceLocation(),
                                                        0, 0, 0, 0,

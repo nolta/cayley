@@ -224,11 +224,10 @@ static APSInt HandleFloatToIntCast(QualType DestType, QualType SrcType,
   bool DestSigned = DestType->isSignedIntegerOrEnumerationType();
 
   // FIXME: Warning for overflow.
-  uint64_t Space[4];
+  APSInt Result(DestWidth, !DestSigned);
   bool ignored;
-  (void)Value.convertToInteger(Space, DestWidth, DestSigned,
-                               llvm::APFloat::rmTowardZero, &ignored);
-  return APSInt(llvm::APInt(DestWidth, 4, Space), !DestSigned);
+  (void)Value.convertToInteger(Result, llvm::APFloat::rmTowardZero, &ignored);
+  return Result;
 }
 
 static APFloat HandleFloatToFloatCast(QualType DestType, QualType SrcType,
@@ -406,6 +405,8 @@ public:
     { return StmtVisitorTy::Visit(E->getChosenSubExpr(Info.Ctx)); }
   RetTy VisitGenericSelectionExpr(const GenericSelectionExpr *E)
     { return StmtVisitorTy::Visit(E->getResultExpr()); }
+  RetTy VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr *E)
+    { return StmtVisitorTy::Visit(E->getReplacement()); }
 
   RetTy VisitBinaryConditionalOperator(const BinaryConditionalOperator *E) {
     OpaqueValueEvaluation opaque(Info, E->getOpaqueValue(), E->getCommon());
@@ -2807,6 +2808,10 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::GNUNullExprClass:
     // GCC considers the GNU __null value to be an integral constant expression.
     return NoDiag();
+
+  case Expr::SubstNonTypeTemplateParmExprClass:
+    return
+      CheckICE(cast<SubstNonTypeTemplateParmExpr>(E)->getReplacement(), Ctx);
 
   case Expr::ParenExprClass:
     return CheckICE(cast<ParenExpr>(E)->getSubExpr(), Ctx);

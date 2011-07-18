@@ -363,7 +363,6 @@ static const char *getActionName(frontend::ActionKind Kind) {
   case frontend::ASTDumpXML:             return "-ast-dump-xml";
   case frontend::ASTPrint:               return "-ast-print";
   case frontend::ASTView:                return "-ast-view";
-  case frontend::BoostCon:               return "-boostcon";
   case frontend::CreateModule:           return "-create-module";
   case frontend::DumpRawTokens:          return "-dump-raw-tokens";
   case frontend::DumpTokens:             return "-dump-tokens";
@@ -434,6 +433,13 @@ static void FrontendOptsToArgs(const FrontendOptions &Opts,
   case FrontendOptions::ARCMT_Modify:
     Res.push_back("-arcmt-modify");
     break;
+  case FrontendOptions::ARCMT_Migrate:
+    Res.push_back("-arcmt-migrate");
+    break;
+  }
+  if (!Opts.ARCMTMigrateDir.empty()) {
+    Res.push_back("-arcmt-migrate-directory");
+    Res.push_back(Opts.ARCMTMigrateDir);
   }
 
   bool NeedLang = false;
@@ -733,6 +739,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-ffake-address-space-map");
   if (Opts.ParseUnknownAnytype)
     Res.push_back("-funknown-anytype");
+  if (Opts.DebuggerSupport)
+    Res.push_back("-fdebugger-support");
   if (Opts.DelayedTemplateParsing)
     Res.push_back("-fdelayed-template-parsing");
   if (Opts.Deprecated)
@@ -1044,6 +1052,7 @@ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
   Opts.UsePhonyTargets = Args.hasArg(OPT_MP);
   Opts.ShowHeaderIncludes = Args.hasArg(OPT_H);
   Opts.HeaderIncludeOutputFile = Args.getLastArgValue(OPT_header_include_file);
+  Opts.AddMissingHeaderDeps = Args.hasArg(OPT_MG);
 }
 
 static void ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
@@ -1151,8 +1160,6 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ProgramAction = frontend::ASTPrint; break;
     case OPT_ast_view:
       Opts.ProgramAction = frontend::ASTView; break;
-    case OPT_boostcon:
-      Opts.ProgramAction = frontend::BoostCon; break;
     case OPT_dump_raw_tokens:
       Opts.ProgramAction = frontend::DumpRawTokens; break;
     case OPT_dump_tokens:
@@ -1256,7 +1263,8 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
 
   Opts.ARCMTAction = FrontendOptions::ARCMT_None;
   if (const Arg *A = Args.getLastArg(OPT_arcmt_check,
-                                     OPT_arcmt_modify)) {
+                                     OPT_arcmt_modify,
+                                     OPT_arcmt_migrate)) {
     switch (A->getOption().getID()) {
     default:
       llvm_unreachable("missed a case");
@@ -1266,8 +1274,12 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
     case OPT_arcmt_modify:
       Opts.ARCMTAction = FrontendOptions::ARCMT_Modify;
       break;
+    case OPT_arcmt_migrate:
+      Opts.ARCMTAction = FrontendOptions::ARCMT_Migrate;
+      break;
     }
   }
+  Opts.ARCMTMigrateDir = Args.getLastArgValue(OPT_arcmt_migrate_directory);
 
   InputKind DashX = IK_None;
   if (const Arg *A = Args.getLastArg(OPT_x)) {
@@ -1673,6 +1685,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.MRTD = Args.hasArg(OPT_mrtd);
   Opts.FakeAddressSpaceMap = Args.hasArg(OPT_ffake_address_space_map);
   Opts.ParseUnknownAnytype = Args.hasArg(OPT_funknown_anytype);
+  Opts.DebuggerSupport = Args.hasArg(OPT_fdebugger_support);
 
   // Record whether the __DEPRECATED define was requested.
   Opts.Deprecated = Args.hasFlag(OPT_fdeprecated_macro,

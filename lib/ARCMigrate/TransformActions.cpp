@@ -173,7 +173,7 @@ private:
 
   /// \brief Computes the source location just past the end of the token at
   /// the given source location. If the location points at a macro, the whole
-  /// macro instantiation is skipped.
+  /// macro expansion is skipped.
   static SourceLocation getLocForEndOfToken(SourceLocation loc,
                                             SourceManager &SM,Preprocessor &PP);
 };
@@ -388,7 +388,7 @@ bool TransformActionsImpl::canInsert(SourceLocation loc) {
 
   if (loc.isFileID())
     return true;
-  return SM.isAtStartOfMacroInstantiation(loc, Ctx.getLangOptions());
+  return PP.isAtStartOfMacroExpansion(loc);
 }
 
 bool TransformActionsImpl::canInsertAfterToken(SourceLocation loc) {
@@ -401,7 +401,7 @@ bool TransformActionsImpl::canInsertAfterToken(SourceLocation loc) {
 
   if (loc.isFileID())
     return true;
-  return SM.isAtEndOfMacroInstantiation(loc, Ctx.getLangOptions());
+  return PP.isAtEndOfMacroExpansion(loc);
 }
 
 bool TransformActionsImpl::canRemoveRange(SourceRange range) {
@@ -586,7 +586,7 @@ StringRef TransformActionsImpl::getUniqueText(StringRef text) {
 
 /// \brief Computes the source location just past the end of the token at
 /// the given source location. If the location points at a macro, the whole
-/// macro instantiation is skipped.
+/// macro expansion is skipped.
 SourceLocation TransformActionsImpl::getLocForEndOfToken(SourceLocation loc,
                                                          SourceManager &SM,
                                                          Preprocessor &PP) {

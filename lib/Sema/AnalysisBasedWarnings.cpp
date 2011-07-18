@@ -600,8 +600,14 @@ clang::sema::AnalysisBasedWarnings::Policy::Policy() {
 clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
   : S(s),
     NumFunctionsAnalyzed(0),
+    NumFunctionsWithBadCFGs(0),
     NumCFGBlocks(0),
-    MaxCFGBlocksPerFunction(0) {
+    MaxCFGBlocksPerFunction(0),
+    NumUninitAnalysisFunctions(0),
+    NumUninitAnalysisVariables(0),
+    MaxUninitAnalysisVariablesPerFunction(0),
+    NumUninitAnalysisBlockVisits(0),
+    MaxUninitAnalysisBlockVisitsPerFunction(0) {
   Diagnostic &D = S.getDiagnostics();
   DefaultPolicy.enableCheckUnreachable = (unsigned)
     (D.getDiagnosticLevel(diag::warn_unreachable, SourceLocation()) !=
@@ -717,7 +723,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       != Diagnostic::Ignored) {
     if (CFG *cfg = AC.getCFG()) {
       UninitValsDiagReporter reporter(S);
-      UninitVariablesAnalysisStats stats = {};
+      UninitVariablesAnalysisStats stats;
+      std::memset(&stats, 0, sizeof(UninitVariablesAnalysisStats));
       runUninitializedVariablesAnalysis(*cast<DeclContext>(D), *cfg, AC,
                                         reporter, stats);
 

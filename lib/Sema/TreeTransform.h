@@ -7772,6 +7772,14 @@ TreeTransform<Derived>::TransformSubstNonTypeTemplateParmPackExpr(
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformSubstNonTypeTemplateParmExpr(
+                                          SubstNonTypeTemplateParmExpr *E) {
+  // Default behavior is to do nothing with this transformation.
+  return SemaRef.Owned(E);
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformMaterializeTemporaryExpr(
                                                   MaterializeTemporaryExpr *E) {
   return getDerived().TransformExpr(E->GetTemporaryExpr());
@@ -8464,11 +8472,24 @@ TreeTransform<Derived>::RebuildCXXOperatorCallExpr(OverloadedOperatorKind Op,
     return SemaRef.CreateOverloadedUnaryOp(OpLoc, Opc, Functions, First);
   }
 
-  if (Op == OO_Subscript)
-    return SemaRef.CreateOverloadedArraySubscriptExpr(Callee->getLocStart(),
-                                                      OpLoc,
-                                                      First,
-                                                      Second);
+  if (Op == OO_Subscript) {
+    SourceLocation LBrace;
+    SourceLocation RBrace;
+
+    if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Callee)) {
+        DeclarationNameLoc &NameLoc = DRE->getNameInfo().getInfo();
+        LBrace = SourceLocation::getFromRawEncoding(
+                    NameLoc.CXXOperatorName.BeginOpNameLoc);
+        RBrace = SourceLocation::getFromRawEncoding(
+                    NameLoc.CXXOperatorName.EndOpNameLoc);
+    } else {
+        LBrace = Callee->getLocStart();
+        RBrace = OpLoc;
+    }
+
+    return SemaRef.CreateOverloadedArraySubscriptExpr(LBrace, RBrace,
+                                                      First, Second);
+  }
 
   // Create the overloaded operator invocation for binary operators.
   BinaryOperatorKind Opc = BinaryOperator::getOverloadedOpcode(Op);

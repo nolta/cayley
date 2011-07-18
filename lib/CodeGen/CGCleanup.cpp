@@ -268,9 +268,7 @@ void CodeGenFunction::initFullExprCleanup() {
   if (cleanup.isEHCleanup()) cleanup.setTestFlagInEHCleanup();
 }
 
-EHScopeStack::Cleanup::~Cleanup() {
-  llvm_unreachable("Cleanup is indestructable");
-}
+void EHScopeStack::Cleanup::anchor() {}
 
 /// All the branch fixups on the EH stack have propagated out past the
 /// outermost normal cleanup; resolve them all by adding cases to the
@@ -450,10 +448,10 @@ static llvm::BasicBlock *SimplifyCleanupEntry(CodeGenFunction &CGF,
 
 static void EmitCleanup(CodeGenFunction &CGF,
                         EHScopeStack::Cleanup *Fn,
-                        bool ForEH,
+                        EHScopeStack::Cleanup::Flags flags,
                         llvm::Value *ActiveFlag) {
   // EH cleanups always occur within a terminate scope.
-  if (ForEH) CGF.EHStack.pushTerminate();
+  if (flags.isForEHCleanup()) CGF.EHStack.pushTerminate();
 
   // If there's an active flag, load it and skip the cleanup if it's
   // false.
@@ -468,7 +466,7 @@ static void EmitCleanup(CodeGenFunction &CGF,
   }
 
   // Ask the cleanup to emit itself.
-  Fn->Emit(CGF, ForEH);
+  Fn->Emit(CGF, flags);
   assert(CGF.HaveInsertPoint() && "cleanup ended with no insertion point?");
 
   // Emit the continuation block if there was an active flag.
@@ -476,7 +474,7 @@ static void EmitCleanup(CodeGenFunction &CGF,
     CGF.EmitBlock(ContBB);
 
   // Leave the terminate scope.
-  if (ForEH) CGF.EHStack.popTerminate();
+  if (flags.isForEHCleanup()) CGF.EHStack.popTerminate();
 }
 
 static void ForwardPrebranchedFallthrough(llvm::BasicBlock *Exit,
@@ -550,6 +548,12 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
       (HasFixups || HasExistingBranches || HasFallthrough)) {
     RequiresNormalCleanup = true;
   }
+
+  EHScopeStack::Cleanup::Flags cleanupFlags;
+  if (Scope.isNormalCleanup())
+    cleanupFlags.setIsNormalCleanupKind();
+  if (Scope.isEHCleanup())
+    cleanupFlags.setIsEHCleanupKind();
 
   // Even if we don't need the normal cleanup, we might still have
   // prebranched fallthrough to worry about.
@@ -674,7 +678,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
 
       EHStack.popCleanup();
 
-      EmitCleanup(*this, Fn, /*ForEH*/ false, NormalActiveFlag);
+      EmitCleanup(*this, Fn, cleanupFlags, NormalActiveFlag);
 
     // Otherwise, the best approach is to thread everything through
     // the cleanup block and then try to clean up after ourselves.
@@ -785,7 +789,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
       EHStack.popCleanup();
       assert(EHStack.hasNormalCleanups() == HasEnclosingCleanups);
 
-      EmitCleanup(*this, Fn, /*ForEH*/ false, NormalActiveFlag);
+      EmitCleanup(*this, Fn, cleanupFlags, NormalActiveFlag);
 
       // Append the prepared cleanup prologue from above.
       llvm::BasicBlock *NormalExit = Builder.GetInsertBlock();
@@ -868,7 +872,9 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
     CGBuilderTy::InsertPoint SavedIP = Builder.saveAndClearIP();
 
     EmitBlock(EHEntry);
-    EmitCleanup(*this, Fn, /*ForEH*/ true, EHActiveFlag);
+
+    cleanupFlags.setIsForEHCleanup();
+    EmitCleanup(*this, Fn, cleanupFlags, EHActiveFlag);
 
     // Append the prepared cleanup prologue from above.
     llvm::BasicBlock *EHExit = Builder.GetInsertBlock();

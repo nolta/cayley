@@ -919,6 +919,12 @@ void StmtProfiler::VisitSubstNonTypeTemplateParmPackExpr(
   VisitTemplateArgument(S->getArgumentPack());
 }
 
+void StmtProfiler::VisitSubstNonTypeTemplateParmExpr(
+    const SubstNonTypeTemplateParmExpr *E) {
+  // Profile exactly as the replacement expression.
+  Visit(E->getReplacement());
+}
+
 void StmtProfiler::VisitMaterializeTemporaryExpr(
                                            const MaterializeTemporaryExpr *S) {
   VisitExpr(S);

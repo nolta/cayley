@@ -538,6 +538,10 @@ public:
   ///        the rules of C++ [expr.unary.noexcept].
   CanThrowResult CanThrow(ASTContext &C) const;
 
+  /// IgnoreImpCasts - Skip past any implicit casts which might
+  /// surround this expression.  Only skips ImplicitCastExprs.
+  Expr *IgnoreImpCasts();
+
   /// IgnoreImplicit - Skip past any implicit AST nodes which might
   /// surround this expression.
   Expr *IgnoreImplicit() { return cast<Expr>(Stmt::IgnoreImplicit()); }
@@ -596,7 +600,10 @@ public:
 
   /// \brief Whether this expression is an implicit reference to 'this' in C++.
   bool isImplicitCXXThis() const;
-  
+
+  const Expr *IgnoreImpCasts() const {
+    return const_cast<Expr*>(this)->IgnoreImpCasts();
+  }
   const Expr *IgnoreParens() const {
     return const_cast<Expr*>(this)->IgnoreParens();
   }
@@ -790,9 +797,10 @@ class DeclRefExpr : public Expr {
   void computeDependence();
 
 public:
-  DeclRefExpr(ValueDecl *D, QualType T, ExprValueKind VK, SourceLocation L)
+  DeclRefExpr(ValueDecl *D, QualType T, ExprValueKind VK, SourceLocation L,
+              const DeclarationNameLoc &LocInfo = DeclarationNameLoc())
     : Expr(DeclRefExprClass, T, VK, OK_Ordinary, false, false, false, false),
-      D(D), Loc(L) {
+      D(D), Loc(L), DNLoc(LocInfo) {
     DeclRefExprBits.HasQualifier = 0;
     DeclRefExprBits.HasExplicitTemplateArgs = 0;
     DeclRefExprBits.HasFoundDecl = 0;
@@ -2692,6 +2700,13 @@ public:
   static bool classof(const ImplicitCastExpr *) { return true; }
 };
 
+inline Expr *Expr::IgnoreImpCasts() {
+  Expr *e = this;
+  while (ImplicitCastExpr *ice = dyn_cast<ImplicitCastExpr>(e))
+    e = ice->getSubExpr();
+  return e;
+}
+
 /// ExplicitCastExpr - An explicit cast written in the source
 /// code.
 ///
@@ -4340,11 +4355,14 @@ public:
 /// AsTypeExpr - Clang builtin function __builtin_astype [OpenCL 6.2.4.2]
 /// This AST node provides support for reinterpreting a type to another
 /// type of the same size.
-class AsTypeExpr : public Expr {
+class AsTypeExpr : public Expr { // Should this be an ExplicitCastExpr?
 private:
-  Expr* SrcExpr;
-  QualType DstType;
+  Stmt *SrcExpr;
   SourceLocation BuiltinLoc, RParenLoc;
+
+  friend class ASTReader;
+  friend class ASTStmtReader;
+  explicit AsTypeExpr(EmptyShell Empty) : Expr(AsTypeExprClass, Empty) {}
   
 public:
   AsTypeExpr(Expr* SrcExpr, QualType DstType,
@@ -4357,15 +4375,16 @@ public:
             SrcExpr->isInstantiationDependent()),
            (DstType->containsUnexpandedParameterPack() ||
             SrcExpr->containsUnexpandedParameterPack())),
-  SrcExpr(SrcExpr), DstType(DstType),
-  BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {}
-  
-  /// \brief Build an empty __builtin_astype
-  explicit AsTypeExpr(EmptyShell Empty) : Expr(AsTypeExprClass, Empty) {}
+  SrcExpr(SrcExpr), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {}
   
   /// getSrcExpr - Return the Expr to be converted.
-  Expr *getSrcExpr() const { return SrcExpr; }
-  QualType getDstType() const { return DstType; }
+  Expr *getSrcExpr() const { return cast<Expr>(SrcExpr); }
+
+  /// getBuiltinLoc - Return the location of the __builtin_astype token.
+  SourceLocation getBuiltinLoc() const { return BuiltinLoc; }
+
+  /// getRParenLoc - Return the location of final right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
   
   SourceRange getSourceRange() const {
     return SourceRange(BuiltinLoc, RParenLoc);
@@ -4377,7 +4396,7 @@ public:
   static bool classof(const AsTypeExpr *) { return true; }
   
   // Iterators
-  child_range children() { return child_range(); }
+  child_range children() { return child_range(&SrcExpr, &SrcExpr+1); }
 };
 }  // end namespace clang
 
