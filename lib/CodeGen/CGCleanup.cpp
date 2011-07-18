@@ -58,7 +58,7 @@ DominatingValue<RValue>::saved_type::save(CodeGenFunction &CGF, RValue rv) {
 
   if (rv.isSlice()) {
     CodeGenFunction::SlicePairTy V = rv.getSliceVal();
-    const llvm::Type *SliceTy =
+    llvm::Type *SliceTy =
       llvm::StructType::get(V.first->getType(), V.second->getType(),
                             (void*) 0);
     llvm::Value *addr = CGF.CreateTempAlloca(SliceTy, "saved-slice");

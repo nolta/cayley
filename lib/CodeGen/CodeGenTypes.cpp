@@ -400,7 +400,7 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
       PointeeType = llvm::Type::getInt8Ty(getLLVMContext());
     unsigned AS = Context.getTargetAddressSpace(ETy);
     llvm::Type *p = llvm::PointerType::get(PointeeType, AS);
-    const llvm::Type *i32 = llvm::IntegerType::get(getLLVMContext(), 32); // FIXME
+    llvm::Type *i32 = llvm::IntegerType::get(getLLVMContext(), 32); // FIXME
     llvm::Type *a = llvm::ArrayType::get(i32, STy->getArrayLen());
     ResultType = llvm::StructType::get(p, a, NULL);
     break;

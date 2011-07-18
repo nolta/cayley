@@ -304,7 +304,7 @@ void SliceExprEmitter::EmitStoreOfSlice(SlicePairTy Val, llvm::Value *DestPtr,
 
 SlicePairTy SliceExprEmitter::VisitExpr(Expr *E) {
   CGF.ErrorUnsupported(E, "slice expression");
-  const llvm::Type *EltTy =
+  llvm::Type *EltTy =
     CGF.ConvertType(E->getType()->getAs<SliceType>()->getPointeeType());
   llvm::Value *U = llvm::UndefValue::get(EltTy);
   return SlicePairTy(U, U);
@@ -339,7 +339,7 @@ SlicePairTy SliceExprEmitter::VisitSliceExpr(const SliceExpr *E) {
   // create tmp array
   unsigned ArrayLen = SliceTy->getArrayLen();
   //const llvm::Type *ITy = llvm::IntegerType::get(CGF.getLLVMContext(), 32); // FIXME
-  const llvm::ArrayType *ArrayTy = llvm::ArrayType::get(Builder.getInt32Ty(), ArrayLen);
+  llvm::ArrayType *ArrayTy = llvm::ArrayType::get(Builder.getInt32Ty(), ArrayLen);
   //llvm::Value *ArrayPtr = CGF.CreateMemTemp(ArrayTy, "slice.a.ptr");
   //llvm::AllocaInst(ArrayTy, 0, "");
   llvm::AllocaInst *ArrayTmp = Builder.CreateAlloca(ArrayTy,
@@ -713,7 +713,7 @@ SlicePairTy SliceExprEmitter::VisitInitListExpr(InitListExpr *E) {
 
   // Empty init list intializes to null
   QualType Ty = E->getType()->getAs<SliceType>()->getPointeeType();
-  const llvm::Type* LTy = CGF.ConvertType(Ty);
+  llvm::Type* LTy = CGF.ConvertType(Ty);
   llvm::Value* zeroConstant = llvm::Constant::getNullValue(LTy);
   return SlicePairTy(zeroConstant, zeroConstant);
 }
@@ -724,7 +724,7 @@ SlicePairTy SliceExprEmitter::VisitVAArgExpr(VAArgExpr *E) {
 
   if (!ArgPtr) {
     CGF.ErrorUnsupported(E, "slice va_arg expression");
-    const llvm::Type *EltTy =
+    llvm::Type *EltTy =
       CGF.ConvertType(E->getType()->getAs<SliceType>()->getPointeeType());
     llvm::Value *U = llvm::UndefValue::get(EltTy);
     return SlicePairTy(U, U);
