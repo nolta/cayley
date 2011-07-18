@@ -36,6 +36,7 @@ class SourceManager;
 class FileManager;
 class FileEntry;
 class LineTableInfo;
+class LangOptions;
   
 /// SrcMgr - Public enums and private classes that are part of the
 /// SourceManager implementation.
@@ -721,7 +722,7 @@ public:
     if (Loc.isFileID())
       return std::make_pair(FID, Offset);
 
-    return getDecomposedInstantiationLocSlowCase(E, Offset);
+    return getDecomposedInstantiationLocSlowCase(E);
   }
 
   /// getDecomposedSpellingLoc - Decompose the specified location into a raw
@@ -833,11 +834,46 @@ public:
 
   /// \brief Returns true if the given MacroID location points at the first
   /// token of the macro instantiation.
-  bool isAtStartOfMacroInstantiation(SourceLocation Loc) const;
+  bool isAtStartOfMacroInstantiation(SourceLocation Loc,
+                                     const LangOptions &LangOpts) const;
 
   /// \brief Returns true if the given MacroID location points at the last
   /// token of the macro instantiation.
-  bool isAtEndOfMacroInstantiation(SourceLocation Loc) const;
+  bool isAtEndOfMacroInstantiation(SourceLocation Loc,
+                                   const LangOptions &LangOpts) const;
+
+  /// \brief Given a specific chunk of a FileID (FileID with offset+length),
+  /// returns true if \arg Loc is inside that chunk and sets relative offset
+  /// (offset of \arg Loc from beginning of chunk) to \arg relativeOffset.
+  bool isInFileID(SourceLocation Loc,
+                  FileID FID, unsigned offset, unsigned length,
+                  unsigned *relativeOffset = 0) const {
+    assert(!FID.isInvalid());
+    if (Loc.isInvalid())
+      return false;
+
+    unsigned start = getSLocEntry(FID).getOffset() + offset;
+    unsigned end = start + length;
+
+#ifndef NDEBUG
+    // Make sure offset/length describe a chunk inside the given FileID.
+    unsigned NextOffset;
+    if (FID.ID+1 == SLocEntryTable.size())
+      NextOffset = getNextOffset();
+    else
+      NextOffset = getSLocEntry(FID.ID+1).getOffset();
+    assert(start < NextOffset);
+    assert(end   < NextOffset);
+#endif
+
+    if (Loc.getOffset() >= start && Loc.getOffset() < end) {
+      if (relativeOffset)
+        *relativeOffset = Loc.getOffset() - start;
+      return true;
+    }
+
+    return false;
+  }
 
   //===--------------------------------------------------------------------===//
   // Line Table Manipulation Routines
@@ -898,6 +934,19 @@ public:
   ///
   /// \returns true if LHS source location comes before RHS, false otherwise.
   bool isBeforeInTranslationUnit(SourceLocation LHS, SourceLocation RHS) const;
+
+  /// \brief Determines the order of 2 source locations in the "source location
+  /// address space".
+  static bool isBeforeInSourceLocationOffset(SourceLocation LHS,
+                                             SourceLocation RHS) {
+    return isBeforeInSourceLocationOffset(LHS, RHS.getOffset());
+  }
+
+  /// \brief Determines the order of a source location and a source location
+  /// offset in the "source location address space".
+  static bool isBeforeInSourceLocationOffset(SourceLocation LHS, unsigned RHS) {
+    return LHS.getOffset() < RHS;
+  }
 
   // Iterators over FileInfos.
   typedef llvm::DenseMap<const FileEntry*, SrcMgr::ContentCache*>
@@ -989,8 +1038,7 @@ private:
   SourceLocation getSpellingLocSlowCase(SourceLocation Loc) const;
 
   std::pair<FileID, unsigned>
-  getDecomposedInstantiationLocSlowCase(const SrcMgr::SLocEntry *E,
-                                        unsigned Offset) const;
+  getDecomposedInstantiationLocSlowCase(const SrcMgr::SLocEntry *E) const;
   std::pair<FileID, unsigned>
   getDecomposedSpellingLocSlowCase(const SrcMgr::SLocEntry *E,
                                    unsigned Offset) const;

@@ -536,15 +536,7 @@ bool LValueExprEvaluator::VisitMemberExpr(const MemberExpr *E) {
   if (FD->getType()->isReferenceType())
     return false;
 
-  // FIXME: This is linear time.
-  unsigned i = 0;
-  for (RecordDecl::field_iterator Field = RD->field_begin(),
-                               FieldEnd = RD->field_end();
-       Field != FieldEnd; (void)++Field, ++i) {
-    if (*Field == FD)
-      break;
-  }
-
+  unsigned i = FD->getFieldIndex();
   Result.Offset += Info.Ctx.toCharUnitsFromBits(RL.getFieldOffset(i));
   return true;
 }
@@ -1827,6 +1819,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_UserDefinedConversion:
   case CK_ObjCProduceObject:
   case CK_ObjCConsumeObject:
+  case CK_ObjCReclaimReturnedObject:
     return false;
 
   case CK_LValueToRValue:
@@ -2333,6 +2326,7 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_IntegralComplexToBoolean:
   case CK_ObjCProduceObject:
   case CK_ObjCConsumeObject:
+  case CK_ObjCReclaimReturnedObject:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_LValueToRValue:

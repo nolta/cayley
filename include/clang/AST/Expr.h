@@ -538,6 +538,10 @@ public:
   ///        the rules of C++ [expr.unary.noexcept].
   CanThrowResult CanThrow(ASTContext &C) const;
 
+  /// IgnoreImplicit - Skip past any implicit AST nodes which might
+  /// surround this expression.
+  Expr *IgnoreImplicit() { return cast<Expr>(Stmt::IgnoreImplicit()); }
+
   /// IgnoreParens - Ignore parentheses.  If this Expr is a ParenExpr, return
   ///  its subexpression.  If that subexpression is also a ParenExpr,
   ///  then this method recursively returns its subexpression, and so forth.
@@ -2534,6 +2538,7 @@ private:
     case CK_IntegralComplexToFloatingComplex:
     case CK_ObjCProduceObject:
     case CK_ObjCConsumeObject:
+    case CK_ObjCReclaimReturnedObject:
       assert(!getType()->isBooleanType() && "unheralded conversion to bool");
       // fallthrough to check for null base path
 

@@ -37,7 +37,7 @@ SourceLocation trans::findLocationAfterSemi(SourceLocation loc,
                                             ASTContext &Ctx) {
   SourceManager &SM = Ctx.getSourceManager();
   if (loc.isMacroID()) {
-    if (!SM.isAtEndOfMacroInstantiation(loc))
+    if (!SM.isAtEndOfMacroInstantiation(loc, Ctx.getLangOptions()))
       return SourceLocation();
     loc = SM.getInstantiationRange(loc).second;
   }
@@ -180,12 +180,9 @@ private:
   void mark(Stmt *S) {
     if (!S) return;
     
-    if (LabelStmt *Label = dyn_cast<LabelStmt>(S))
-      return mark(Label->getSubStmt());
-    if (ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(S))
-      return mark(CE->getSubExpr());
-    if (ExprWithCleanups *EWC = dyn_cast<ExprWithCleanups>(S))
-      return mark(EWC->getSubExpr());
+    while (LabelStmt *Label = dyn_cast<LabelStmt>(S))
+      S = Label->getSubStmt();
+    S = S->IgnoreImplicit();
     if (Expr *E = dyn_cast<Expr>(S))
       Removables.insert(E);
   }

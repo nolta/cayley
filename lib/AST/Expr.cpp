@@ -1212,6 +1212,8 @@ const char *CastExpr::getCastKindName() const {
     return "ObjCConsumeObject";
   case CK_ObjCProduceObject:
     return "ObjCProduceObject";
+  case CK_ObjCReclaimReturnedObject:
+    return "ObjCReclaimReturnedObject";
   case CK_SliceCast:
     return "SliceCast";
   case CK_SliceToBoolean:

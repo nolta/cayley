@@ -1898,8 +1898,9 @@ public:
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCXXThrowExpr(SourceLocation ThrowLoc, Expr *Sub) {
-    return getSema().ActOnCXXThrow(ThrowLoc, Sub);
+  ExprResult RebuildCXXThrowExpr(SourceLocation ThrowLoc, Expr *Sub,
+                                 bool IsThrownVariableInScope) {
+    return getSema().BuildCXXThrow(ThrowLoc, Sub, IsThrownVariableInScope);
   }
 
   /// \brief Build a new C++ default-argument expression.
@@ -6900,7 +6901,8 @@ TreeTransform<Derived>::TransformCXXThrowExpr(CXXThrowExpr *E) {
       SubExpr.get() == E->getSubExpr())
     return SemaRef.Owned(E);
 
-  return getDerived().RebuildCXXThrowExpr(E->getThrowLoc(), SubExpr.get());
+  return getDerived().RebuildCXXThrowExpr(E->getThrowLoc(), SubExpr.get(),
+                                          E->isThrownVariableInScope());
 }
 
 template<typename Derived>

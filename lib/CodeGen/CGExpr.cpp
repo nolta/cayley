@@ -20,8 +20,8 @@
 #include "CGObjCRuntime.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
-#include "llvm/Intrinsics.h"
 #include "clang/Frontend/CodeGenOptions.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/Target/TargetData.h"
 using namespace clang;
 using namespace CodeGen;
@@ -2120,7 +2120,8 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   case CK_MemberPointerToBoolean:
   case CK_AnyPointerToBlockPointerCast:
   case CK_ObjCProduceObject:
-  case CK_ObjCConsumeObject: {
+  case CK_ObjCConsumeObject:
+  case CK_ObjCReclaimReturnedObject: {
     // These casts only produce lvalues when we're binding a reference to a 
     // temporary realized from a (converted) pure rvalue. Emit the expression
     // as a value, copy it into a temporary, and return an lvalue referring to
