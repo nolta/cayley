@@ -28,10 +28,6 @@
 #include <cassert>
 #include <iterator>
 
-namespace llvm {
-  class raw_ostream;
-}
-
 namespace clang {
   class CXXDestructorDecl;
   class Decl;
@@ -478,8 +474,8 @@ public:
   unsigned getBlockID() const { return BlockID; }
 
   void dump(const CFG *cfg, const LangOptions &LO) const;
-  void print(llvm::raw_ostream &OS, const CFG* cfg, const LangOptions &LO) const;
-  void printTerminator(llvm::raw_ostream &OS, const LangOptions &LO) const;
+  void print(raw_ostream &OS, const CFG* cfg, const LangOptions &LO) const;
+  void printTerminator(raw_ostream &OS, const LangOptions &LO) const;
   
   void addSuccessor(CFGBlock* Block, BumpVectorContext &C) {
     if (Block)
@@ -652,7 +648,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   void viewCFG(const LangOptions &LO) const;
-  void print(llvm::raw_ostream& OS, const LangOptions &LO) const;
+  void print(raw_ostream& OS, const LangOptions &LO) const;
   void dump(const LangOptions &LO) const;
 
   //===--------------------------------------------------------------------===//

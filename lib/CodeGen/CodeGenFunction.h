@@ -353,7 +353,7 @@ private:
   ///     A a;
   ///    foo:
   ///     bar();
-  llvm::SmallVector<BranchFixup, 8> BranchFixups;
+  SmallVector<BranchFixup, 8> BranchFixups;
 
   char *allocate(size_t Size);
 
@@ -682,7 +682,7 @@ public:
 public:
   /// ObjCEHValueStack - Stack of Objective-C exception values, used for
   /// rethrows.
-  llvm::SmallVector<llvm::Value*, 8> ObjCEHValueStack;
+  SmallVector<llvm::Value*, 8> ObjCEHValueStack;
 
   /// A class controlling the emission of a finally block.
   class FinallyInfo {
@@ -873,7 +873,7 @@ public:
   /// The given basic block lies in the current EH scope, but may be a
   /// target of a potentially scope-crossing jump; get a stable handle
   /// to which we can perform this jump later.
-  JumpDest getJumpDestInCurrentScope(llvm::StringRef Name = llvm::StringRef()) {
+  JumpDest getJumpDestInCurrentScope(StringRef Name = StringRef()) {
     return getJumpDestInCurrentScope(createBasicBlock(Name));
   }
 
@@ -1090,7 +1090,7 @@ private:
     JumpDest BreakBlock;
     JumpDest ContinueBlock;
   };
-  llvm::SmallVector<BreakContinue, 8> BreakContinueStack;
+  SmallVector<BreakContinue, 8> BreakContinueStack;
 
   /// SwitchInsn - This is nearest current switch instruction. It is null if if
   /// current context is not in a switch.
@@ -1416,7 +1416,7 @@ public:
   static bool hasAggregateLLVMType(QualType T);
 
   /// createBasicBlock - Create an LLVM basic block.
-  llvm::BasicBlock *createBasicBlock(llvm::StringRef name = "",
+  llvm::BasicBlock *createBasicBlock(StringRef name = "",
                                      llvm::Function *parent = 0,
                                      llvm::BasicBlock *before = 0) {
 #ifdef NDEBUG
@@ -1488,7 +1488,7 @@ public:
   /// block. The caller is responsible for setting an appropriate alignment on
   /// the alloca.
   llvm::AllocaInst *CreateTempAlloca(llvm::Type *Ty,
-                                     const llvm::Twine &Name = "tmp");
+                                     const Twine &Name = "tmp");
 
   /// InitTempAlloca - Provide an initial value for the given alloca.
   void InitTempAlloca(llvm::AllocaInst *Alloca, llvm::Value *Value);
@@ -1498,15 +1498,15 @@ public:
   /// value needs to be stored into an alloca (for example, to avoid explicit
   /// PHI construction), but the type is the IR type, not the type appropriate
   /// for storing in memory.
-  llvm::AllocaInst *CreateIRTemp(QualType T, const llvm::Twine &Name = "tmp");
+  llvm::AllocaInst *CreateIRTemp(QualType T, const Twine &Name = "tmp");
 
   /// CreateMemTemp - Create a temporary memory object of the given type, with
   /// appropriate alignment.
-  llvm::AllocaInst *CreateMemTemp(QualType T, const llvm::Twine &Name = "tmp");
+  llvm::AllocaInst *CreateMemTemp(QualType T, const Twine &Name = "tmp");
 
   /// CreateAggTemp - Create a temporary memory object for the given
   /// aggregate type.
-  AggValueSlot CreateAggTemp(QualType T, const llvm::Twine &Name = "tmp") {
+  AggValueSlot CreateAggTemp(QualType T, const Twine &Name = "tmp") {
     return AggValueSlot::forAddr(CreateMemTemp(T, Name), T.getQualifiers(),
                                  false);
   }
@@ -2085,9 +2085,9 @@ public:
 
   llvm::CallSite EmitCallOrInvoke(llvm::Value *Callee,
                                   llvm::ArrayRef<llvm::Value *> Args,
-                                  const llvm::Twine &Name = "");
+                                  const Twine &Name = "");
   llvm::CallSite EmitCallOrInvoke(llvm::Value *Callee,
-                                  const llvm::Twine &Name = "");
+                                  const Twine &Name = "");
 
   llvm::Value *BuildVirtualCall(const CXXMethodDecl *MD, llvm::Value *This,
                                 llvm::Type *Ty);
@@ -2132,14 +2132,14 @@ public:
 
   llvm::Value *EmitARMBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitNeonCall(llvm::Function *F,
-                            llvm::SmallVectorImpl<llvm::Value*> &O,
+                            SmallVectorImpl<llvm::Value*> &O,
                             const char *name,
                             unsigned shift = 0, bool rightshift = false);
   llvm::Value *EmitNeonSplat(llvm::Value *V, llvm::Constant *Idx);
   llvm::Value *EmitNeonShiftVector(llvm::Value *V, llvm::Type *Ty,
                                    bool negateForRightShift);
 
-  llvm::Value *BuildVector(const llvm::SmallVectorImpl<llvm::Value*> &Ops);
+  llvm::Value *BuildVector(const SmallVectorImpl<llvm::Value*> &Ops);
   llvm::Value *EmitX86BuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitPPCBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
 
@@ -2402,7 +2402,7 @@ private:
   /// Ty, into individual arguments on the provided vector \arg Args. See
   /// ABIArgInfo::Expand.
   void ExpandTypeToArgs(QualType Ty, RValue Src,
-                        llvm::SmallVector<llvm::Value*, 16> &Args,
+                        SmallVector<llvm::Value*, 16> &Args,
                         llvm::FunctionType *IRFuncTy);
 
   llvm::Value* EmitAsmInput(const AsmStmt &S,

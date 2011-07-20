@@ -87,7 +87,7 @@ namespace {
     void ImportDeclarationNameLoc(const DeclarationNameInfo &From,
                                   DeclarationNameInfo& To);
     void ImportDeclContext(DeclContext *FromDC, bool ForceImport = false);
-    bool ImportDefinition(RecordDecl *From, RecordDecl *To);
+    bool ImportDefinition(RecordDecl *From, RecordDecl *To, bool ForceImport = false);
     TemplateParameterList *ImportTemplateParameterList(
                                                  TemplateParameterList *Params);
     TemplateArgument ImportTemplateArgument(const TemplateArgument &From);
@@ -1802,7 +1802,7 @@ void ASTNodeImporter::ImportDeclContext(DeclContext *FromDC, bool ForceImport) {
     Importer.Import(*From);
 }
 
-bool ASTNodeImporter::ImportDefinition(RecordDecl *From, RecordDecl *To) {
+bool ASTNodeImporter::ImportDefinition(RecordDecl *From, RecordDecl *To, bool ForceImport) {
   if (To->getDefinition())
     return false;
   
@@ -1839,7 +1839,7 @@ bool ASTNodeImporter::ImportDefinition(RecordDecl *From, RecordDecl *To) {
       ToCXX->setBases(Bases.data(), Bases.size());
   }
   
-  ImportDeclContext(From);
+  ImportDeclContext(From, ForceImport);
   To->completeDefinition();
   return false;
 }
@@ -4327,6 +4327,15 @@ void ASTImporter::ImportDefinition(Decl *From) {
   
   if (DeclContext *FromDC = cast<DeclContext>(From)) {
     ASTNodeImporter Importer(*this);
+      
+    if (RecordDecl *ToRecord = dyn_cast<RecordDecl>(To)) {
+      if (!ToRecord->getDefinition()) {
+        Importer.ImportDefinition(cast<RecordDecl>(FromDC), ToRecord, 
+                                  /*ForceImport=*/true);
+        return;
+      }      
+    }
+      
     Importer.ImportDeclContext(FromDC, true);
   }
 }

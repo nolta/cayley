@@ -19,7 +19,6 @@
 #include <string>
 
 namespace llvm {
-class raw_ostream;
 class raw_fd_ostream;
 class Timer;
 }
@@ -102,10 +101,10 @@ class CompilerInstance {
   struct OutputFile {
     std::string Filename;
     std::string TempFilename;
-    llvm::raw_ostream *OS;
+    raw_ostream *OS;
 
     OutputFile(const std::string &filename, const std::string &tempFilename,
-               llvm::raw_ostream *os)
+               raw_ostream *os)
       : Filename(filename), TempFilename(tempFilename), OS(os) { }
   };
 
@@ -518,7 +517,7 @@ public:
 
   /// Create an external AST source to read a PCH file and attach it to the AST
   /// context.
-  void createPCHExternalASTSource(llvm::StringRef Path,
+  void createPCHExternalASTSource(StringRef Path,
                                   bool DisablePCHValidation,
                                   bool DisableStatCache,
                                   void *DeserializationListener);
@@ -527,7 +526,7 @@ public:
   ///
   /// \return - The new object on success, or null on failure.
   static ExternalASTSource *
-  createPCHExternalASTSource(llvm::StringRef Path, const std::string &Sysroot,
+  createPCHExternalASTSource(StringRef Path, const std::string &Sysroot,
                              bool DisablePCHValidation,
                              bool DisableStatCache,
                              Preprocessor &PP, ASTContext &Context,
@@ -546,7 +545,7 @@ public:
                                unsigned Line, unsigned Column,
                                bool ShowMacros,
                                bool ShowCodePatterns, bool ShowGlobals,
-                               llvm::raw_ostream &OS);
+                               raw_ostream &OS);
 
   /// \brief Create the Sema object to be used for parsing.
   void createSema(bool CompleteTranslationUnit,
@@ -560,18 +559,18 @@ public:
   ///
   /// \return - Null on error.
   llvm::raw_fd_ostream *
-  createDefaultOutputFile(bool Binary = true, llvm::StringRef BaseInput = "",
-                          llvm::StringRef Extension = "");
+  createDefaultOutputFile(bool Binary = true, StringRef BaseInput = "",
+                          StringRef Extension = "");
 
   /// Create a new output file and add it to the list of tracked output files,
   /// optionally deriving the output path name.
   ///
   /// \return - Null on error.
   llvm::raw_fd_ostream *
-  createOutputFile(llvm::StringRef OutputPath,
+  createOutputFile(StringRef OutputPath,
                    bool Binary = true, bool RemoveFileOnSignal = true,
-                   llvm::StringRef BaseInput = "",
-                   llvm::StringRef Extension = "");
+                   StringRef BaseInput = "",
+                   StringRef Extension = "");
 
   /// Create a new output file, optionally deriving the output path name.
   ///
@@ -594,10 +593,10 @@ public:
   /// \param TempPathName [out] - If given, the temporary file path name
   /// will be stored here on success.
   static llvm::raw_fd_ostream *
-  createOutputFile(llvm::StringRef OutputPath, std::string &Error,
+  createOutputFile(StringRef OutputPath, std::string &Error,
                    bool Binary = true, bool RemoveFileOnSignal = true,
-                   llvm::StringRef BaseInput = "",
-                   llvm::StringRef Extension = "",
+                   StringRef BaseInput = "",
+                   StringRef Extension = "",
                    std::string *ResultPathName = 0,
                    std::string *TempPathName = 0);
 
@@ -609,13 +608,13 @@ public:
   /// as the main file.
   ///
   /// \return True on success.
-  bool InitializeSourceManager(llvm::StringRef InputFile);
+  bool InitializeSourceManager(StringRef InputFile);
 
   /// InitializeSourceManager - Initialize the source manager to set InputFile
   /// as the main file.
   ///
   /// \return True on success.
-  static bool InitializeSourceManager(llvm::StringRef InputFile,
+  static bool InitializeSourceManager(StringRef InputFile,
                                       Diagnostic &Diags,
                                       FileManager &FileMgr,
                                       SourceManager &SourceMgr,

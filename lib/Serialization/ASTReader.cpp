@@ -1834,18 +1834,14 @@ MacroDefinition *ASTReader::getMacroDefinition(MacroID ID) {
     return 0;
 
   if (!MacroDefinitionsLoaded[ID - 1]) {
-    unsigned Index = ID - 1;
-    for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-      PerFileData &F = *Chain[N - I - 1];
-      if (Index < F.LocalNumMacroDefinitions) {
-        SavedStreamPosition SavedPosition(F.PreprocessorDetailCursor);  
-        F.PreprocessorDetailCursor.JumpToBit(F.MacroDefinitionOffsets[Index]);
-        LoadPreprocessedEntity(F);
-        break;
-      }
-      Index -= F.LocalNumMacroDefinitions;
-    }
-    assert(MacroDefinitionsLoaded[ID - 1] && "Broken chain");
+    GlobalMacroDefinitionMapType::iterator I =GlobalMacroDefinitionMap.find(ID);
+    assert(I != GlobalMacroDefinitionMap.end() && 
+           "Corrupted global macro definition map");
+    PerFileData &F = *I->second.first;
+    unsigned Index = ID - 1 + I->second.second;
+    SavedStreamPosition SavedPosition(F.PreprocessorDetailCursor);  
+    F.PreprocessorDetailCursor.JumpToBit(F.MacroDefinitionOffsets[Index]);
+    LoadPreprocessedEntity(F);
   }
 
   return MacroDefinitionsLoaded[ID - 1];
@@ -2047,6 +2043,13 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       }
       F.DeclOffsets = (const uint32_t *)BlobStart;
       F.LocalNumDecls = Record[0];
+        
+      // Introduce the global -> local mapping for declarations within this 
+      // AST file.
+      GlobalDeclMap.insert(std::make_pair(getTotalNumDecls() + 1, 
+                                          std::make_pair(&F, 
+                                                         -getTotalNumDecls())));
+      DeclsLoaded.resize(DeclsLoaded.size() + F.LocalNumDecls);      
       break;
 
     case TU_UPDATE_LEXICAL: {
@@ -2113,6 +2116,14 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       }
       F.IdentifierOffsets = (const uint32_t *)BlobStart;
       F.LocalNumIdentifiers = Record[0];
+        
+      // Introduce the global -> local mapping for identifiers within this AST
+      // file
+      GlobalIdentifierMap.insert(
+                     std::make_pair(getTotalNumIdentifiers() + 1, 
+                                    std::make_pair(&F, 
+                                                   -getTotalNumIdentifiers())));
+      IdentifiersLoaded.resize(IdentifiersLoaded.size() +F.LocalNumIdentifiers);
       break;
 
     case EXTERNAL_DEFINITIONS:
@@ -2174,6 +2185,14 @@ ASTReader::ReadASTBlock(PerFileData &F) {
     case SELECTOR_OFFSETS:
       F.SelectorOffsets = (const uint32_t *)BlobStart;
       F.LocalNumSelectors = Record[0];
+        
+      // Introduce the global -> local mapping for identifiers within this AST
+      // file
+      GlobalSelectorMap.insert(
+                     std::make_pair(getTotalNumSelectors() + 1, 
+                                    std::make_pair(&F, 
+                                                   -getTotalNumSelectors())));
+      SelectorsLoaded.resize(SelectorsLoaded.size() + F.LocalNumSelectors);        
       break;
 
     case METHOD_POOL:
@@ -2335,6 +2354,16 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       F.MacroDefinitionOffsets = (const uint32_t *)BlobStart;
       F.NumPreallocatedPreprocessingEntities = Record[0];
       F.LocalNumMacroDefinitions = Record[1];
+        
+      // Introduce the global -> local mapping for identifiers within this AST
+      // file
+      GlobalMacroDefinitionMap.insert(
+               std::make_pair(getTotalNumMacroDefinitions() + 1, 
+                              std::make_pair(&F, 
+                                             -getTotalNumMacroDefinitions())));
+      MacroDefinitionsLoaded.resize(
+                    MacroDefinitionsLoaded.size() + F.LocalNumMacroDefinitions);
+
       break;
 
     case DECL_UPDATE_OFFSETS: {
@@ -2523,26 +2552,16 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
   }
 
   // Allocate space for loaded slocentries, identifiers, decls and types.
-  unsigned TotalNumIdentifiers = 0, TotalNumTypes = 0, TotalNumDecls = 0,
-           TotalNumPreallocatedPreprocessingEntities = 0, TotalNumMacroDefs = 0,
-           TotalNumSelectors = 0;
+  unsigned TotalNumTypes = 0, TotalNumPreallocatedPreprocessingEntities = 0;
   for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
     TotalNumSLocEntries += Chain[I]->LocalNumSLocEntries;
-    TotalNumIdentifiers += Chain[I]->LocalNumIdentifiers;
     TotalNumTypes += Chain[I]->LocalNumTypes;
-    TotalNumDecls += Chain[I]->LocalNumDecls;
     TotalNumPreallocatedPreprocessingEntities +=
         Chain[I]->NumPreallocatedPreprocessingEntities;
-    TotalNumMacroDefs += Chain[I]->LocalNumMacroDefinitions;
-    TotalNumSelectors += Chain[I]->LocalNumSelectors;
   }
-  IdentifiersLoaded.resize(TotalNumIdentifiers);
   TypesLoaded.resize(TotalNumTypes);
-  DeclsLoaded.resize(TotalNumDecls);
-  MacroDefinitionsLoaded.resize(TotalNumMacroDefs);
   if (PP) {
-    if (TotalNumIdentifiers > 0)
-      PP->getHeaderSearchInfo().SetExternalLookup(this);
+    PP->getHeaderSearchInfo().SetExternalLookup(this);
     if (TotalNumPreallocatedPreprocessingEntities > 0) {
       if (!PP->getPreprocessingRecord())
         PP->createPreprocessingRecord(true);
@@ -2550,7 +2569,6 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
                                      TotalNumPreallocatedPreprocessingEntities);
     }
   }
-  SelectorsLoaded.resize(TotalNumSelectors);
   // Preload SLocEntries.
   for (unsigned I = 0, N = PreloadSLocEntries.size(); I != N; ++I) {
     ASTReadResult Result = ReadSLocEntryRecord(PreloadSLocEntries[I]);
@@ -4612,18 +4630,11 @@ IdentifierInfo *ASTReader::DecodeIdentifierInfo(unsigned ID) {
   assert(PP && "Forgot to set Preprocessor ?");
   ID -= 1;
   if (!IdentifiersLoaded[ID]) {
-    unsigned Index = ID;
-    const char *Str = 0;
-    for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-      PerFileData *F = Chain[N - I - 1];
-      if (Index < F->LocalNumIdentifiers) {
-         uint32_t Offset = F->IdentifierOffsets[Index];
-         Str = F->IdentifierTableData + Offset;
-         break;
-      }
-      Index -= F->LocalNumIdentifiers;
-    }
-    assert(Str && "Broken Chain");
+    GlobalIdentifierMapType::iterator I = GlobalIdentifierMap.find(ID + 1);
+    assert(I != GlobalIdentifierMap.end() && "Corrupted global identifier map");
+    unsigned Index = ID + I->second.second;
+    const char *Str = I->second.first->IdentifierTableData
+                    + I->second.first->IdentifierOffsets[Index];
 
     // All of the strings in the AST file are preceded by a 16-bit length.
     // Extract that 16-bit length to avoid having to execute strlen().
@@ -4657,19 +4668,15 @@ Selector ASTReader::DecodeSelector(unsigned ID) {
 
   if (SelectorsLoaded[ID - 1].getAsOpaquePtr() == 0) {
     // Load this selector from the selector table.
-    unsigned Idx = ID - 1;
-    for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-      PerFileData &F = *Chain[N - I - 1];
-      if (Idx < F.LocalNumSelectors) {
-        ASTSelectorLookupTrait Trait(*this);
-        SelectorsLoaded[ID - 1] =
-           Trait.ReadKey(F.SelectorLookupTableData + F.SelectorOffsets[Idx], 0);
-        if (DeserializationListener)
-          DeserializationListener->SelectorRead(ID, SelectorsLoaded[ID - 1]);
-        break;
-      }
-      Idx -= F.LocalNumSelectors;
-    }
+    GlobalSelectorMapType::iterator I = GlobalSelectorMap.find(ID);
+    assert(I != GlobalSelectorMap.end() && "Corrupted global selector map");
+    ASTSelectorLookupTrait Trait(*this);
+    PerFileData &F = *I->second.first;
+    unsigned Idx = ID - 1 + I->second.second;
+    SelectorsLoaded[ID - 1] =
+      Trait.ReadKey(F.SelectorLookupTableData + F.SelectorOffsets[Idx], 0);
+    if (DeserializationListener)
+      DeserializationListener->SelectorRead(ID, SelectorsLoaded[ID - 1]);
   }
 
   return SelectorsLoaded[ID - 1];

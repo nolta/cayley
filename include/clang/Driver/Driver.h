@@ -24,7 +24,6 @@
 #include <string>
 
 namespace llvm {
-  class raw_ostream;
   template<typename T> class ArrayRef;
 }
 namespace clang {
@@ -75,7 +74,7 @@ public:
   /// functionality.
   /// FIXME: This type of customization should be removed in favor of the
   /// universal driver when it is ready.
-  typedef llvm::SmallVector<std::string, 4> prefix_list;
+  typedef SmallVector<std::string, 4> prefix_list;
   prefix_list PrefixDirs;
 
   /// sysroot, if present
@@ -173,9 +172,9 @@ private:
   DerivedArgList *TranslateInputArgs(const InputArgList &Args) const;
 
 public:
-  Driver(llvm::StringRef _ClangExecutable,
-         llvm::StringRef _DefaultHostTriple,
-         llvm::StringRef _DefaultImageName,
+  Driver(StringRef _ClangExecutable,
+         StringRef _DefaultHostTriple,
+         StringRef _DefaultImageName,
          bool IsProduction, bool CXXIsProduction,
          Diagnostic &_Diags);
   ~Driver();
@@ -209,7 +208,7 @@ public:
       return InstalledDir.c_str();
     return Dir.c_str();
   }
-  void setInstalledDir(llvm::StringRef Value) {
+  void setInstalledDir(StringRef Value) {
     InstalledDir = Value;
   }
 
@@ -281,7 +280,7 @@ public:
   void PrintOptions(const ArgList &Args) const;
 
   /// PrintVersion - Print the driver version.
-  void PrintVersion(const Compilation &C, llvm::raw_ostream &OS) const;
+  void PrintVersion(const Compilation &C, raw_ostream &OS) const;
 
   /// GetFilePath - Lookup \arg Name in the list of file search paths.
   ///

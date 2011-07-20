@@ -41,7 +41,7 @@ public:
   typedef const value_type *const_pointer;
 
 private:
-  typedef llvm::SmallVector<value_type, InitialCapacity> Representation;
+  typedef SmallVector<value_type, InitialCapacity> Representation;
   Representation Rep;
 
   struct Compare {
@@ -50,6 +50,12 @@ private:
     }
     bool operator ()(Int L, const_reference R) const {
       return L < R.first;
+    }
+    bool operator ()(Int L, Int R) const { 
+      return L < R;
+    }
+    bool operator ()(const_reference L, const_reference R) const {
+      return L.first < R.first;
     }
   };
 
