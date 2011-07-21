@@ -1562,7 +1562,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(PerFileData &F) {
                                              Code, Record, BlobStart, BlobLen);
   switch (RecType) {
   case PPD_MACRO_EXPANSION: {
-    if (PreprocessedEntity *PE = PPRec.getPreprocessedEntity(Record[0]))
+    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(Record[0]))
       return PE;
     
     MacroExpansion *ME =
@@ -1570,12 +1570,12 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(PerFileData &F) {
                                  SourceRange(ReadSourceLocation(F, Record[1]),
                                              ReadSourceLocation(F, Record[2])),
                                  getMacroDefinition(Record[4]));
-    PPRec.SetPreallocatedEntity(Record[0], ME);
+    PPRec.setLoadedPreallocatedEntity(Record[0], ME);
     return ME;
   }
       
   case PPD_MACRO_DEFINITION: {
-    if (PreprocessedEntity *PE = PPRec.getPreprocessedEntity(Record[0]))
+    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(Record[0]))
       return PE;
     
     if (Record[1] > MacroDefinitionsLoaded.size()) {
@@ -1594,7 +1594,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(PerFileData &F) {
                                             ReadSourceLocation(F, Record[2]),
                                             ReadSourceLocation(F, Record[3])));
       
-      PPRec.SetPreallocatedEntity(Record[0], MD);
+      PPRec.setLoadedPreallocatedEntity(Record[0], MD);
       MacroDefinitionsLoaded[Record[1] - 1] = MD;
       
       if (DeserializationListener)
@@ -1605,7 +1605,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(PerFileData &F) {
   }
       
   case PPD_INCLUSION_DIRECTIVE: {
-    if (PreprocessedEntity *PE = PPRec.getPreprocessedEntity(Record[0]))
+    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(Record[0]))
       return PE;
     
     const char *FullFileNameStart = BlobStart + Record[3];
@@ -1623,7 +1623,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(PerFileData &F) {
                                        File,
                                  SourceRange(ReadSourceLocation(F, Record[1]),
                                              ReadSourceLocation(F, Record[2])));
-    PPRec.SetPreallocatedEntity(Record[0], ID);
+    PPRec.setLoadedPreallocatedEntity(Record[0], ID);
     return ID;
   }
   }
@@ -2034,6 +2034,13 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       }
       F.TypeOffsets = (const uint32_t *)BlobStart;
       F.LocalNumTypes = Record[0];
+
+      // Introduce the global -> local mapping for types within this
+      // AST file.
+      GlobalTypeMap.insert(std::make_pair(getTotalNumTypes() + 1,
+                                          std::make_pair(&F,
+                                                         -getTotalNumTypes())));
+      TypesLoaded.resize(TypesLoaded.size() + F.LocalNumTypes);
       break;
 
     case DECL_OFFSET:
@@ -2350,22 +2357,43 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       break;
     }
 
-    case MACRO_DEFINITION_OFFSETS:
+    case MACRO_DEFINITION_OFFSETS: {
       F.MacroDefinitionOffsets = (const uint32_t *)BlobStart;
       F.NumPreallocatedPreprocessingEntities = Record[0];
       F.LocalNumMacroDefinitions = Record[1];
-        
-      // Introduce the global -> local mapping for identifiers within this AST
-      // file
+
+      // Introduce the global -> local mapping for preprocessed entities within 
+      // this AST file.
+      unsigned StartingID;
+      if (PP) {
+        if (!PP->getPreprocessingRecord())
+          PP->createPreprocessingRecord(true);
+        if (!PP->getPreprocessingRecord()->getExternalSource())
+          PP->getPreprocessingRecord()->SetExternalSource(*this);
+        StartingID 
+          = PP->getPreprocessingRecord()
+              ->allocateLoadedEntities(F.NumPreallocatedPreprocessingEntities);
+      } else {
+        // FIXME: We'll eventually want to kill this path, since it assumes
+        // a particular allocation strategy in the preprocessing record.
+        StartingID = getTotalNumPreprocessedEntities();
+      }
+      
+      GlobalPreprocessedEntityMap.insert(
+                        std::make_pair(StartingID,
+                                         std::make_pair(&F, -(int)StartingID)));
+
+      // Introduce the global -> local mapping for macro definitions within 
+      // this AST file.
       GlobalMacroDefinitionMap.insert(
                std::make_pair(getTotalNumMacroDefinitions() + 1, 
                               std::make_pair(&F, 
                                              -getTotalNumMacroDefinitions())));
       MacroDefinitionsLoaded.resize(
                     MacroDefinitionsLoaded.size() + F.LocalNumMacroDefinitions);
-
       break;
-
+    }
+        
     case DECL_UPDATE_OFFSETS: {
       if (Record.size() % 2 != 0) {
         Error("invalid DECL_UPDATE_OFFSETS block in AST file");
@@ -2552,23 +2580,12 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
   }
 
   // Allocate space for loaded slocentries, identifiers, decls and types.
-  unsigned TotalNumTypes = 0, TotalNumPreallocatedPreprocessingEntities = 0;
   for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
     TotalNumSLocEntries += Chain[I]->LocalNumSLocEntries;
-    TotalNumTypes += Chain[I]->LocalNumTypes;
-    TotalNumPreallocatedPreprocessingEntities +=
-        Chain[I]->NumPreallocatedPreprocessingEntities;
   }
-  TypesLoaded.resize(TotalNumTypes);
-  if (PP) {
+  if (PP)
     PP->getHeaderSearchInfo().SetExternalLookup(this);
-    if (TotalNumPreallocatedPreprocessingEntities > 0) {
-      if (!PP->getPreprocessingRecord())
-        PP->createPreprocessingRecord(true);
-      PP->getPreprocessingRecord()->SetExternalSource(*this,
-                                     TotalNumPreallocatedPreprocessingEntities);
-    }
-  }
+
   // Preload SLocEntries.
   for (unsigned I = 0, N = PreloadSLocEntries.size(); I != N; ++I) {
     ASTReadResult Result = ReadSLocEntryRecord(PreloadSLocEntries[I]);
@@ -2764,15 +2781,15 @@ ASTReader::ASTReadResult ASTReader::ReadASTCore(llvm::StringRef FileName,
 
 void ASTReader::setPreprocessor(Preprocessor &pp) {
   PP = &pp;
-
-  unsigned TotalNum = 0;
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I)
-    TotalNum += Chain[I]->NumPreallocatedPreprocessingEntities;
-  if (TotalNum) {
+  
+  if (unsigned N = getTotalNumPreprocessedEntities()) {
     if (!PP->getPreprocessingRecord())
       PP->createPreprocessingRecord(true);
-    PP->getPreprocessingRecord()->SetExternalSource(*this, TotalNum);
+    PP->getPreprocessingRecord()->SetExternalSource(*this);
+    PP->getPreprocessingRecord()->allocateLoadedEntities(N);
   }
+  
+  PP->getHeaderSearchInfo().SetExternalLookup(this);
 }
 
 void ASTReader::InitializeContext(ASTContext &Ctx) {
@@ -3159,15 +3176,10 @@ void ASTReader::ReadPragmaDiagnosticMappings(Diagnostic &Diag) {
 
 /// \brief Get the correct cursor and offset for loading a type.
 ASTReader::RecordLocation ASTReader::TypeCursorForIndex(unsigned Index) {
-  PerFileData *F = 0;
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    F = Chain[N - I - 1];
-    if (Index < F->LocalNumTypes)
-      break;
-    Index -= F->LocalNumTypes;
-  }
-  assert(F && F->LocalNumTypes > Index && "Broken chain");
-  return RecordLocation(F, F->TypeOffsets[Index]);
+  GlobalTypeMapType::iterator I = GlobalTypeMap.find(Index+1);
+  assert(I != GlobalTypeMap.end() && "Corrupted global type map");
+  return RecordLocation(I->second.first,
+      I->second.first->TypeOffsets[Index + I->second.second]);
 }
 
 /// \brief Read and return the type with the given index..
