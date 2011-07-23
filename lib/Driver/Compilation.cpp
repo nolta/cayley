@@ -20,7 +20,9 @@
 #include "llvm/Support/Program.h"
 #include <sys/stat.h>
 #include <errno.h>
+
 using namespace clang::driver;
+using namespace clang;
 
 Compilation::Compilation(const Driver &D, const ToolChain &_DefaultToolChain,
                          InputArgList *_Args, DerivedArgList *_TranslatedArgs)
@@ -60,7 +62,7 @@ const DerivedArgList &Compilation::getArgsForToolChain(const ToolChain *TC,
   return *Entry;
 }
 
-void Compilation::PrintJob(llvm::raw_ostream &OS, const Job &J,
+void Compilation::PrintJob(raw_ostream &OS, const Job &J,
                            const char *Terminator, bool Quote) const {
   if (const Command *C = dyn_cast<Command>(&J)) {
     OS << " \"" << C->getExecutable() << '"';
@@ -137,7 +139,7 @@ int Compilation::ExecuteCommand(const Command &C,
 
   if (getDriver().CCCEcho || getDriver().CCPrintOptions ||
       getArgs().hasArg(options::OPT_v)) {
-    llvm::raw_ostream *OS = &llvm::errs();
+    raw_ostream *OS = &llvm::errs();
 
     // Follow gcc implementation of CC_PRINT_OPTIONS; we could also cache the
     // output stream.

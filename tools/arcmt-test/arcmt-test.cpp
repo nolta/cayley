@@ -69,24 +69,24 @@ llvm::sys::Path GetExecutablePath(const char *Argv0) {
 }
 
 static void printSourceLocation(SourceLocation loc, ASTContext &Ctx,
-                                llvm::raw_ostream &OS);
+                                raw_ostream &OS);
 static void printSourceRange(CharSourceRange range, ASTContext &Ctx,
-                             llvm::raw_ostream &OS);
+                             raw_ostream &OS);
 
 namespace {
 
 class PrintTransforms : public MigrationProcess::RewriteListener {
   ASTContext *Ctx;
-  llvm::raw_ostream &OS;
+  raw_ostream &OS;
 
 public:
-  PrintTransforms(llvm::raw_ostream &OS)
+  PrintTransforms(raw_ostream &OS)
     : Ctx(0), OS(OS) { }
 
   virtual void start(ASTContext &ctx) { Ctx = &ctx; }
   virtual void finish() { Ctx = 0; }
 
-  virtual void insert(SourceLocation loc, llvm::StringRef text) {
+  virtual void insert(SourceLocation loc, StringRef text) {
     assert(Ctx);
     OS << "Insert: ";
     printSourceLocation(loc, *Ctx, OS);
@@ -103,8 +103,8 @@ public:
 
 } // anonymous namespace
 
-static bool checkForMigration(llvm::StringRef resourcesPath,
-                              llvm::ArrayRef<const char *> Args) {
+static bool checkForMigration(StringRef resourcesPath,
+                              ArrayRef<const char *> Args) {
   DiagnosticClient *DiagClient =
     new TextDiagnosticPrinter(llvm::errs(), DiagnosticOptions());
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
@@ -134,7 +134,7 @@ static bool checkForMigration(llvm::StringRef resourcesPath,
   return Diags->getClient()->getNumErrors() > 0;
 }
 
-static void printResult(FileRemapper &remapper, llvm::raw_ostream &OS) {
+static void printResult(FileRemapper &remapper, raw_ostream &OS) {
   CompilerInvocation CI;
   remapper.applyMappings(CI);
   PreprocessorOptions &PPOpts = CI.getPreprocessorOpts();
@@ -145,8 +145,8 @@ static void printResult(FileRemapper &remapper, llvm::raw_ostream &OS) {
   }
 }
 
-static bool performTransformations(llvm::StringRef resourcesPath,
-                                   llvm::ArrayRef<const char *> Args) {
+static bool performTransformations(StringRef resourcesPath,
+                                   ArrayRef<const char *> Args) {
   // Check first.
   if (checkForMigration(resourcesPath, Args))
     return true;
@@ -199,7 +199,7 @@ static bool performTransformations(llvm::StringRef resourcesPath,
   return false;
 }
 
-static bool filesCompareEqual(llvm::StringRef fname1, llvm::StringRef fname2) {
+static bool filesCompareEqual(StringRef fname1, StringRef fname2) {
   using namespace llvm;
 
   OwningPtr<MemoryBuffer> file1;
@@ -215,7 +215,7 @@ static bool filesCompareEqual(llvm::StringRef fname1, llvm::StringRef fname2) {
   return file1->getBuffer() == file2->getBuffer();
 }
 
-static bool verifyTransformedFiles(llvm::ArrayRef<std::string> resultFiles) {
+static bool verifyTransformedFiles(ArrayRef<std::string> resultFiles) {
   using namespace llvm;
 
   assert(!resultFiles.empty());
@@ -303,7 +303,7 @@ static bool verifyTransformedFiles(llvm::ArrayRef<std::string> resultFiles) {
 //===----------------------------------------------------------------------===//
 
 static void printSourceLocation(SourceLocation loc, ASTContext &Ctx,
-                                llvm::raw_ostream &OS) {
+                                raw_ostream &OS) {
   SourceManager &SM = Ctx.getSourceManager();
   PresumedLoc PL = SM.getPresumedLoc(loc);
 
@@ -313,7 +313,7 @@ static void printSourceLocation(SourceLocation loc, ASTContext &Ctx,
 }
 
 static void printSourceRange(CharSourceRange range, ASTContext &Ctx,
-                             llvm::raw_ostream &OS) {
+                             raw_ostream &OS) {
   SourceManager &SM = Ctx.getSourceManager();
   const LangOptions &langOpts = Ctx.getLangOptions();
 
@@ -338,7 +338,6 @@ static void printSourceRange(CharSourceRange range, ASTContext &Ctx,
 //===----------------------------------------------------------------------===//
 
 int main(int argc, const char **argv) {
-  using llvm::StringRef;
   void *MainAddr = (void*) (intptr_t) GetExecutablePath;
   llvm::sys::PrintStackTraceOnErrorSignal();
 
@@ -365,7 +364,7 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  llvm::ArrayRef<const char*> Args(argv+optargc+1, argc-optargc-1);
+  ArrayRef<const char*> Args(argv+optargc+1, argc-optargc-1);
 
   if (CheckOnly)
     return checkForMigration(resourcesPath, Args);

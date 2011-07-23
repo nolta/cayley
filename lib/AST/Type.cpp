@@ -1490,7 +1490,7 @@ QualType QualType::getNonLValueExprType(ASTContext &Context) const {
   return *this;
 }
 
-llvm::StringRef FunctionType::getNameForCallConv(CallingConv CC) {
+StringRef FunctionType::getNameForCallConv(CallingConv CC) {
   switch (CC) {
   case CC_Default: 
     llvm_unreachable("no name for default cc");
