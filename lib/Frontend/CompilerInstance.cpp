@@ -290,13 +290,14 @@ CompilerInstance::createPCHExternalASTSource(llvm::StringRef Path,
                                              bool Preamble) {
   llvm::OwningPtr<ASTReader> Reader;
   Reader.reset(new ASTReader(PP, &Context,
-                             Sysroot.empty() ? 0 : Sysroot.c_str(),
+                             Sysroot.empty() ? "" : Sysroot.c_str(),
                              DisablePCHValidation, DisableStatCache));
 
   Reader->setDeserializationListener(
             static_cast<ASTDeserializationListener *>(DeserializationListener));
-  switch (Reader->ReadAST(Path,
-                          Preamble ? ASTReader::Preamble : ASTReader::PCH)) {
+  switch (Reader->ReadAST(Path, 
+                          Preamble ? serialization::MK_Preamble 
+                                   : serialization::MK_PCH)) {
   case ASTReader::Success:
     // Set the predefines buffer as suggested by the PCH reader. Typically, the
     // predefines buffer will be empty.
@@ -489,7 +490,7 @@ CompilerInstance::createOutputFile(llvm::StringRef OutputPath,
         (OutPath.isRegularFile() && OutPath.canWrite())) {
       // Create a temporary file.
       llvm::sys::Path TempPath(OutFile);
-      if (!TempPath.createTemporaryFileOnDisk())
+      if (!TempPath.makeUnique(/*reuse_current=*/false, /*ErrMsg*/0))
         TempFile = TempPath.str();
     }
   }

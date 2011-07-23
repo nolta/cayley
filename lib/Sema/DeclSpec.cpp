@@ -235,6 +235,7 @@ bool Declarator::isDeclarationOfFunction() const {
     case DeclaratorChunk::Array:
     case DeclaratorChunk::BlockPointer:
     case DeclaratorChunk::MemberPointer:
+    case DeclaratorChunk::Slice:
       return false;
     }
     llvm_unreachable("Invalid type chunk");
@@ -256,6 +257,7 @@ bool Declarator::isDeclarationOfFunction() const {
     case TST_error:
     case TST_float:
     case TST_int:
+    case TST_quad:
     case TST_struct:
     case TST_union:
     case TST_unknown_anytype:

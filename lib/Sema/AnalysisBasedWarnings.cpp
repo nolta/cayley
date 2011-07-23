@@ -560,8 +560,6 @@ public:
       const VarDecl *vd = i->first;
       UsesVec *vec = i->second;
 
-      bool fixitIssued = false;
-            
       // Sort the uses by their SourceLocations.  While not strictly
       // guaranteed to produce them in line/column order, this will provide
       // a stable ordering.
@@ -573,11 +571,11 @@ public:
                                       /*isAlwaysUninit=*/vi->second))
           continue;
 
-        // Suggest a fixit hint the first time we diagnose a use of a variable.
-        if (!fixitIssued) {
-          SuggestInitializationFixit(S, vd);
-          fixitIssued = true;
-        }
+        SuggestInitializationFixit(S, vd);
+
+        // Skip further diagnostics for this variable. We try to warn only on
+        // the first point at which a variable is used uninitialized.
+        break;
       }
 
       delete vec;
@@ -656,10 +654,14 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   const Stmt *Body = D->getBody();
   assert(Body);
 
+  AnalysisContext AC(D, 0);
+
   // Don't generate EH edges for CallExprs as we'd like to avoid the n^2
   // explosion for destrutors that can result and the compile time hit.
-  AnalysisContext AC(D, 0, /*useUnoptimizedCFG=*/false, /*addehedges=*/false,
-                     /*addImplicitDtors=*/true, /*addInitializers=*/true);
+  AC.getCFGBuildOptions().PruneTriviallyFalseEdges = true;
+  AC.getCFGBuildOptions().AddEHEdges = false;
+  AC.getCFGBuildOptions().AddInitializers = true;
+  AC.getCFGBuildOptions().AddImplicitDtors = true;
   
   // Force that certain expressions appear as CFGElements in the CFG.  This
   // is used to speed up various analyses.
@@ -667,14 +669,16 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   // prototyping, but we need a way for analyses to say what expressions they
   // expect to always be CFGElements and then fill in the BuildOptions
   // appropriately.  This is essentially a layering violation.
-  CFG::BuildOptions &buildOptions = AC.getCFGBuildOptions();
-  buildOptions.setAlwaysAdd(Stmt::BinaryOperatorClass);
-  buildOptions.setAlwaysAdd(Stmt::BlockExprClass);
-  buildOptions.setAlwaysAdd(Stmt::CStyleCastExprClass);
-  buildOptions.setAlwaysAdd(Stmt::DeclRefExprClass);
-  buildOptions.setAlwaysAdd(Stmt::ImplicitCastExprClass);
-  buildOptions.setAlwaysAdd(Stmt::UnaryOperatorClass);
+  AC.getCFGBuildOptions()
+    .setAlwaysAdd(Stmt::BinaryOperatorClass)
+    .setAlwaysAdd(Stmt::BlockExprClass)
+    .setAlwaysAdd(Stmt::CStyleCastExprClass)
+    .setAlwaysAdd(Stmt::DeclRefExprClass)
+    .setAlwaysAdd(Stmt::ImplicitCastExprClass)
+    .setAlwaysAdd(Stmt::UnaryOperatorClass);
 
+  // Construct the analysis context with the specified CFG build options.
+  
   // Emit delayed diagnostics.
   if (!fscope->PossiblyUnreachableDiags.empty()) {
     bool analyzed = false;

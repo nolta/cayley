@@ -1552,3 +1552,117 @@ void test54(int first, ...) {
 // CHECK:   define internal void @"\01-[Test55(Category) dealloc]"(
 // CHECK-NOT: ret
 // CHECK:     call void bitcast (i8* ({{%.*}}*, i8*, ...)* @objc_msgSendSuper2 to void ({{%.*}}*, i8*)*)(
+
+// rdar://problem/8024350
+@protocol Test56Protocol
++ (id) make __attribute__((ns_returns_retained));
+@end
+@interface Test56<Test56Protocol> @end
+@implementation Test56
+// CHECK: define internal i8* @"\01+[Test56 make]"(
++ (id) make {
+  extern id test56_helper(void);
+  // CHECK:      [[T0:%.*]] = call i8* @test56_helper()
+  // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
+  // CHECK-NEXT: ret i8* [[T1]]
+  return test56_helper();
+}
+@end
+void test56_test(void) {
+  id x = [Test56 make];
+  // CHECK: define void @test56_test()
+  // CHECK:      [[X:%.*]] = alloca i8*, align 8
+  // CHECK:      [[T0:%.*]] = call i8* bitcast (i8* (i8*, i8*, ...)* @objc_msgSend to i8* (i8*, i8*)*)(
+  // CHECK-NEXT: store i8* [[T0]], i8** [[X]]
+  // CHECK-NEXT: [[T0:%.*]] = load i8** [[X]]
+  // CHECK-NEXT: call void @objc_release(i8* [[T0]])
+  // CHECK-NEXT: ret void
+}
+
+// rdar://problem/9784964
+@interface Test57
+@property (nonatomic, strong) id strong;
+@property (nonatomic, weak) id weak;
+@property (nonatomic, unsafe_unretained) id unsafe;
+@end
+@implementation Test57
+@synthesize strong, weak, unsafe;
+@end
+// CHECK: define internal i8* @"\01-[Test57 strong]"(
+// CHECK:      [[T0:%.*]] = load [[TEST57:%.*]]** {{%.*}}
+// CHECK-NEXT: [[T1:%.*]] = load i64* @"OBJC_IVAR_$_Test57.strong"
+// CHECK-NEXT: [[T2:%.*]] = bitcast [[TEST57]]* [[T0]] to i8*
+// CHECK-NEXT: [[T3:%.*]] = getelementptr inbounds i8* [[T2]], i64 [[T1]]
+// CHECK-NEXT: [[T4:%.*]] = bitcast i8* [[T3]] to i8**
+// CHECK-NEXT: [[T5:%.*]] = load i8** [[T4]]
+// CHECK-NEXT: ret i8* [[T5]]
+
+// CHECK: define internal i8* @"\01-[Test57 weak]"(
+// CHECK:      [[T0:%.*]] = load [[TEST57]]** {{%.*}}
+// CHECK-NEXT: [[T1:%.*]] = load i64* @"OBJC_IVAR_$_Test57.weak"
+// CHECK-NEXT: [[T2:%.*]] = bitcast [[TEST57]]* [[T0]] to i8*
+// CHECK-NEXT: [[T3:%.*]] = getelementptr inbounds i8* [[T2]], i64 [[T1]]
+// CHECK-NEXT: [[T4:%.*]] = bitcast i8* [[T3]] to i8**
+// CHECK-NEXT: [[T5:%.*]] = call i8* @objc_loadWeakRetained(i8** [[T4]])
+// CHECK-NEXT: [[T6:%.*]] = call i8* @objc_autoreleaseReturnValue(i8* [[T5]])
+// CHECK-NEXT: ret i8* [[T6]]
+
+// CHECK: define internal i8* @"\01-[Test57 unsafe]"(
+// CHECK:      [[T0:%.*]] = load [[TEST57]]** {{%.*}}
+// CHECK-NEXT: [[T1:%.*]] = load i64* @"OBJC_IVAR_$_Test57.unsafe"
+// CHECK-NEXT: [[T2:%.*]] = bitcast [[TEST57]]* [[T0]] to i8*
+// CHECK-NEXT: [[T3:%.*]] = getelementptr inbounds i8* [[T2]], i64 [[T1]]
+// CHECK-NEXT: [[T4:%.*]] = bitcast i8* [[T3]] to i8**
+// CHECK-NEXT: [[T5:%.*]] = load i8** [[T4]]
+// CHECK-NEXT: ret i8* [[T5]]
+
+// rdar://problem/9821110
+@interface Test58
+- (char*) interior __attribute__((objc_returns_inner_pointer));
+// Should we allow this on properties?
+@end
+extern Test58 *test58_helper(void);
+
+// CHECK: define void @test58a()
+void test58a(void) {
+  // CHECK:      [[T0:%.*]] = call [[TEST58:%.*]]* @test58_helper()
+  // CHECK-NEXT: [[T1:%.*]] = bitcast [[TEST58]]* [[T0]] to i8*
+  // CHECK-NEXT: [[T2:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T1]])
+  // CHECK-NEXT: [[T3:%.*]] = bitcast i8* [[T2]] to [[TEST58]]*
+  // CHECK-NEXT: store [[TEST58]]* [[T3]]
+  // CHECK-NEXT: [[T0:%.*]] = load [[TEST58]]**
+  // CHECK-NEXT: [[T1:%.*]] = bitcast [[TEST58]]* [[T0]] to i8*
+  // CHECK-NEXT: [[T2:%.*]] = call i8* @objc_retainAutorelease(i8* [[T1]])
+  // CHECK-NEXT: [[T3:%.*]] = bitcast i8* [[T2]] to [[TEST58]]*
+  // CHECK-NEXT: [[T4:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
+  // CHECK-NEXT: [[T5:%.*]] = bitcast [[TEST58]]* [[T3]] to i8*
+  // CHECK-NEXT: [[T6:%.*]] = call i8* bitcast
+  // CHECK-NEXT: store i8* [[T6]], i8**
+  // CHECK-NEXT: [[T0:%.*]] = load [[TEST58]]**
+  // CHECK-NEXT: [[T1:%.*]] = bitcast [[TEST58]]* [[T0]] to i8*
+  // CHECK-NEXT: call void @objc_release(i8* [[T1]]) nounwind, !clang.imprecise_release
+  // CHECK-NEXT: ret void
+  Test58 *ptr = test58_helper();
+  char *c = [(ptr) interior];
+}
+
+// CHECK: define void @test58b()
+void test58b(void) {
+  // CHECK:      [[T0:%.*]] = call [[TEST58:%.*]]* @test58_helper()
+  // CHECK-NEXT: [[T1:%.*]] = bitcast [[TEST58]]* [[T0]] to i8*
+  // CHECK-NEXT: [[T2:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T1]])
+  // CHECK-NEXT: [[T3:%.*]] = bitcast i8* [[T2]] to [[TEST58]]*
+  // CHECK-NEXT: store [[TEST58]]* [[T3]]
+  // CHECK-NEXT: [[T0:%.*]] = load [[TEST58]]**
+  // CHECK-NEXT: [[T1:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
+  // CHECK-NEXT: [[T2:%.*]] = bitcast [[TEST58]]* [[T0]] to i8*
+  // CHECK-NEXT: [[T3:%.*]] = call i8* bitcast
+  // CHECK-NEXT: store i8* [[T3]], i8**
+  // CHECK-NEXT: [[T0:%.*]] = load [[TEST58]]**
+  // CHECK-NEXT: [[T1:%.*]] = bitcast [[TEST58]]* [[T0]] to i8*
+  // CHECK-NEXT: call void @objc_release(i8* [[T1]]) nounwind
+  // CHECK-NOT:  clang.imprecise_release
+  // CHECK-NEXT: ret void
+  __attribute__((objc_precise_lifetime)) Test58 *ptr = test58_helper();
+  char *c = [ptr interior];
+}

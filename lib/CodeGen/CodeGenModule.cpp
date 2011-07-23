@@ -1715,7 +1715,7 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
                                            "__CFConstantStringClassReference");
     // Decay array -> ptr
     CFConstantStringClassRef =
-      llvm::ConstantExpr::getGetElementPtr(GV, Zeros, 2);
+      llvm::ConstantExpr::getGetElementPtr(GV, Zeros);
   }
 
   QualType CFTy = getContext().getCFConstantStringType();
@@ -1763,7 +1763,7 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
     CharUnits Align = getContext().getTypeAlignInChars(getContext().CharTy);
     GV->setAlignment(Align.getQuantity());
   }
-  Fields[2] = llvm::ConstantExpr::getGetElementPtr(GV, Zeros, 2);
+  Fields[2] = llvm::ConstantExpr::getGetElementPtr(GV, Zeros);
 
   // String length.
   Ty = getTypes().ConvertType(getContext().LongTy);
@@ -1816,7 +1816,7 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
       GV = CreateRuntimeVariable(PTy, str);
       // Decay array -> ptr
       ConstantStringClassRef = 
-        llvm::ConstantExpr::getGetElementPtr(GV, Zeros, 2);
+        llvm::ConstantExpr::getGetElementPtr(GV, Zeros);
     }
   }
   
@@ -1844,7 +1844,7 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
   GV->setUnnamedAddr(true);
   CharUnits Align = getContext().getTypeAlignInChars(getContext().CharTy);
   GV->setAlignment(Align.getQuantity());
-  Fields[1] = llvm::ConstantExpr::getGetElementPtr(GV, Zeros, 2);
+  Fields[1] = llvm::ConstantExpr::getGetElementPtr(GV, Zeros);
   
   // String length.
   llvm::Type *Ty = getTypes().ConvertType(getContext().UnsignedIntTy);
@@ -2001,9 +2001,8 @@ void CodeGenModule::EmitObjCPropertyImplementations(const
 }
 
 static bool needsDestructMethod(ObjCImplementationDecl *impl) {
-  ObjCInterfaceDecl *iface
-    = const_cast<ObjCInterfaceDecl*>(impl->getClassInterface());
-  for (ObjCIvarDecl *ivar = iface->all_declared_ivar_begin();
+  const ObjCInterfaceDecl *iface = impl->getClassInterface();
+  for (const ObjCIvarDecl *ivar = iface->all_declared_ivar_begin();
        ivar; ivar = ivar->getNextIvar())
     if (ivar->getType().isDestructedType())
       return true;

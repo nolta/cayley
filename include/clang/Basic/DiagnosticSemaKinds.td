@@ -464,6 +464,10 @@ def err_continuation_class : Error<"continuation class has no primary class">;
 def err_property_type : Error<"property cannot have array or function type %0">;
 def error_missing_property_context : Error<
   "missing context for property implementation declaration">;
+def error_property_after_method_impl : Error<
+  "property implementation declaration after method or function definition">;
+def warn_property_after_method_impl : Warning<
+  "property implementation declaration after method or function definition">;
 def error_bad_property_decl : Error<
   "property implementation must have its declaration in interface %0">;
 def error_category_property : Error<
@@ -1409,7 +1413,7 @@ def err_attribute_overloadable_no_prototype : Error<
   "'overloadable' function %0 must have a prototype">;
 def warn_ns_attribute_wrong_return_type : Warning<
   "%0 attribute only applies to %select{functions|methods}1 that "
-  "return %select{an Objective-C object|a pointer}2">;
+  "return %select{an Objective-C object|a pointer|a non-retainable pointer}2">;
 def warn_ns_attribute_wrong_parameter_type : Warning<
   "%0 attribute only applies to %select{Objective-C object|pointer}1 "
   "parameters">;
@@ -3054,9 +3058,6 @@ def err_stmtexpr_file_scope : Error<
 def warn_mixed_sign_comparison : Warning<
   "comparison of integers of different signs: %0 and %1">,
   InGroup<SignCompare>, DefaultIgnore;
-def warn_mixed_sign_conditional : Warning<
-  "operands of ? are integers of different signs: %0 and %1">,
-  InGroup<SignCompare>, DefaultIgnore;
 def warn_lunsigned_always_true_comparison : Warning<
   "comparison of unsigned%select{| enum}2 expression %0 is always %1">,
   InGroup<TautologicalCompare>;
@@ -4344,6 +4345,9 @@ def warn_attribute_method_def : Warning<
 def ext_typecheck_base_super : Warning<
   "method parameter type %0 does not match "
   "super class method parameter type %1">, InGroup<SuperSubClassMismatch>, DefaultIgnore;
+def warn_missing_method_return_type : Warning<
+  "method has no return type specified; defaults to 'id'">,
+  InGroup<MissingMethodReturnType>, DefaultIgnore;
 
 // Spell-checking diagnostics
 def err_unknown_typename_suggest : Error<
