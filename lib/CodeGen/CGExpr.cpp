@@ -1682,9 +1682,9 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E) {
     ArrayAlignment = ArrayLV.getAlignment();
 
     if (getContext().getLangOptions().isSignedOverflowDefined())
-      Address = Builder.CreateGEP(ArrayPtr, Args, Args+2, "arrayidx");
+      Address = Builder.CreateGEP(ArrayPtr, Args, "arrayidx");
     else
-      Address = Builder.CreateInBoundsGEP(ArrayPtr, Args, Args+2, "arrayidx");
+      Address = Builder.CreateInBoundsGEP(ArrayPtr, Args, "arrayidx");
   } else if (const SliceType *ST =
                E->getBase()->getType()->getAs<SliceType>()) {
     SlicePairTy Slice = EmitSliceExpr(E->getBase());
@@ -1745,7 +1745,7 @@ LValue CodeGenFunction::EmitArraySubscriptsExpr(const ArraySubscriptsExpr *E) {
     // multiply by stride
     llvm::Value *Args[] = { llvm::ConstantInt::get(Int32Ty,0),
                             llvm::ConstantInt::get(Int32Ty,i) };
-    Address = Builder.CreateGEP(Slice.second, Args, Args+2, "sli.stridep");
+    Address = Builder.CreateGEP(Slice.second, Args, "sli.stridep");
     /*
     Address = Builder.CreateGEP(Slice.second, llvm::ConstantInt::get(Int32Ty,i),
                                 "sli.stridep");
