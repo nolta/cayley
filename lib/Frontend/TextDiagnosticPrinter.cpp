@@ -85,8 +85,8 @@ void TextDiagnosticPrinter::HighlightRange(const CharSourceRange &R,
          "Expect a correspondence between source and caret line!");
   if (!R.isValid()) return;
 
-  SourceLocation Begin = SM.getInstantiationLoc(R.getBegin());
-  SourceLocation End = SM.getInstantiationLoc(R.getEnd());
+  SourceLocation Begin = SM.getExpansionLoc(R.getBegin());
+  SourceLocation End = SM.getExpansionLoc(R.getEnd());
 
   // If the End location and the start location are the same and are a macro
   // location, then the range was something that came from a macro expansion
@@ -94,7 +94,7 @@ void TextDiagnosticPrinter::HighlightRange(const CharSourceRange &R,
   // highlight the range.  If this is a function-like macro, we'd also like to
   // highlight the arguments.
   if (Begin == End && R.getEnd().isMacroID())
-    End = SM.getInstantiationRange(R.getEnd()).second;
+    End = SM.getExpansionRange(R.getEnd()).second;
 
   unsigned StartLineNo = SM.getInstantiationLineNumber(Begin);
   if (StartLineNo > LineNo || SM.getFileID(Begin) != FID)
@@ -914,7 +914,7 @@ void TextDiagnosticPrinter::HandleDiagnostic(Diagnostic::Level Level,
                 
         if (DiagOpts->ShowSourceRanges && Info.getNumRanges()) {
           FileID CaretFileID =
-            SM.getFileID(SM.getInstantiationLoc(Info.getLocation()));
+            SM.getFileID(SM.getExpansionLoc(Info.getLocation()));
           bool PrintedRange = false;
 
           for (unsigned i = 0, e = Info.getNumRanges(); i != e; ++i) {
@@ -923,8 +923,8 @@ void TextDiagnosticPrinter::HandleDiagnostic(Diagnostic::Level Level,
 
             SourceLocation B = Info.getRange(i).getBegin();
             SourceLocation E = Info.getRange(i).getEnd();
-            B = SM.getInstantiationLoc(B);
-            E = SM.getInstantiationLoc(E);
+            B = SM.getExpansionLoc(B);
+            E = SM.getExpansionLoc(E);
 
             // If the End location and the start location are the same and are a
             // macro location, then the range was something that came from a
@@ -932,7 +932,7 @@ void TextDiagnosticPrinter::HandleDiagnostic(Diagnostic::Level Level,
             // best we can do is to highlight the range.  If this is a
             // function-like macro, we'd also like to highlight the arguments.
             if (B == E && Info.getRange(i).getEnd().isMacroID())
-              E = SM.getInstantiationRange(Info.getRange(i).getEnd()).second;
+              E = SM.getExpansionRange(Info.getRange(i).getEnd()).second;
 
             std::pair<FileID, unsigned> BInfo = SM.getDecomposedLoc(B);
             std::pair<FileID, unsigned> EInfo = SM.getDecomposedLoc(E);
