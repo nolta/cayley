@@ -221,9 +221,9 @@ void HTMLDiagnostics::ReportDiag(const PathDiagnostic& D,
       << html::EscapeText(Entry->getName())
       << "</td></tr>\n<tr><td class=\"rowname\">Location:</td><td>"
          "<a href=\"#EndPath\">line "
-      << (*D.rbegin()).getLocation().asLocation().getInstantiationLineNumber()
+      << (*D.rbegin()).getLocation().asLocation().getExpansionLineNumber()
       << ", column "
-      << (*D.rbegin()).getLocation().asLocation().getInstantiationColumnNumber()
+      << (*D.rbegin()).getLocation().asLocation().getExpansionColumnNumber()
       << "</a></td></tr>\n"
          "<tr><td class=\"rowname\">Description:</td><td>"
       << D.getDescription() << "</td></tr>\n";
@@ -261,7 +261,7 @@ void HTMLDiagnostics::ReportDiag(const PathDiagnostic& D,
     os << "\n<!-- BUGFILE " << DirName << Entry->getName() << " -->\n";
 
     os << "\n<!-- BUGLINE "
-       << D.back()->getLocation().asLocation().getInstantiationLineNumber()
+       << D.back()->getLocation().asLocation().getExpansionLineNumber()
        << " -->\n";
 
     os << "\n<!-- BUGPATHLENGTH " << D.size() << " -->\n";
@@ -324,7 +324,7 @@ void HTMLDiagnostics::HandlePiece(Rewriter& R, FileID BugFileID,
 
   SourceManager &SM = R.getSourceMgr();
   assert(&Pos.getManager() == &SM && "SourceManagers are different!");
-  std::pair<FileID, unsigned> LPosInfo = SM.getDecomposedInstantiationLoc(Pos);
+  std::pair<FileID, unsigned> LPosInfo = SM.getDecomposedExpansionLoc(Pos);
 
   if (LPosInfo.first != BugFileID)
     return;
@@ -550,10 +550,10 @@ void HTMLDiagnostics::HighlightRange(Rewriter& R, FileID BugFileID,
   const LangOptions &LangOpts = R.getLangOpts();
 
   SourceLocation InstantiationStart = SM.getExpansionLoc(Range.getBegin());
-  unsigned StartLineNo = SM.getInstantiationLineNumber(InstantiationStart);
+  unsigned StartLineNo = SM.getExpansionLineNumber(InstantiationStart);
 
   SourceLocation InstantiationEnd = SM.getExpansionLoc(Range.getEnd());
-  unsigned EndLineNo = SM.getInstantiationLineNumber(InstantiationEnd);
+  unsigned EndLineNo = SM.getExpansionLineNumber(InstantiationEnd);
 
   if (EndLineNo < StartLineNo)
     return;
@@ -563,7 +563,7 @@ void HTMLDiagnostics::HighlightRange(Rewriter& R, FileID BugFileID,
     return;
 
   // Compute the column number of the end.
-  unsigned EndColNo = SM.getInstantiationColumnNumber(InstantiationEnd);
+  unsigned EndColNo = SM.getExpansionColumnNumber(InstantiationEnd);
   unsigned OldEndColNo = EndColNo;
 
   if (EndColNo) {

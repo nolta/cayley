@@ -268,6 +268,7 @@ ExprResult Sema::DefaultFunctionArrayConversion(Expr *E) {
     E = ImpCastExprToType(E, Context.getPointerType(Ty),
                           CK_FunctionToPointerDecay).take();
   else if (Ty->isArrayType()) {
+    CheckArrayAccess(E);
     // In C90 mode, arrays only promote to pointers if the array expression is
     // an lvalue.  The relevant legalese is C90 6.2.2.1p3: "an lvalue that has
     // type 'array of type' is converted to an expression that has type 'pointer
@@ -386,6 +387,14 @@ ExprResult Sema::UsualUnaryConversions(Expr *E) {
   QualType Ty = E->getType();
   assert(!Ty.isNull() && "UsualUnaryConversions - missing type");
   
+  if (Ty->isPointerType() || Ty->isArrayType()) {
+    Expr *subE = E->IgnoreParenImpCasts();
+    while (UnaryOperator *UO = dyn_cast<UnaryOperator>(subE)) {
+      subE = UO->getSubExpr()->IgnoreParenImpCasts();
+    }
+    if (subE) CheckArrayAccess(subE);
+  }
+
   // Try to perform integral promotions if the object has a theoretically
   // promotable type.
   if (Ty->isIntegralOrUnscopedEnumerationType()) {
@@ -6049,6 +6058,8 @@ QualType Sema::CheckAdditionOperands( // C99 6.5.6
         return QualType();
       }
 
+      CheckArrayAccess(PExp, IExp);
+
       if (CompLHSTy) {
         QualType LHSTy = Context.isPromotableBitField(lex.get());
         if (LHSTy.isNull()) {
@@ -6102,6 +6113,11 @@ QualType Sema::CheckSubtractionOperands(ExprResult &lex, ExprResult &rex,
     if (rex.get()->getType()->isIntegerType()) {
       if (!checkArithmeticOpPointerOperand(*this, Loc, lex.get()))
         return QualType();
+
+      Expr *IExpr = rex.get()->IgnoreParenCasts();
+      UnaryOperator negRex(IExpr, UO_Minus, IExpr->getType(), VK_RValue,
+                           OK_Ordinary, IExpr->getExprLoc());
+      CheckArrayAccess(lex.get()->IgnoreParenCasts(), &negRex);
 
       if (CompLHSTy) *CompLHSTy = lex.get()->getType();
       return lex.get()->getType();

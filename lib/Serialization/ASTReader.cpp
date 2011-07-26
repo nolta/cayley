@@ -1360,7 +1360,7 @@ ASTReader::ASTReadResult ASTReader::ReadSLocEntryRecord(int ID) {
 
   case SM_SLOC_EXPANSION_ENTRY: {
     SourceLocation SpellingLoc = ReadSourceLocation(*F, Record[1]);
-    SourceMgr.createInstantiationLoc(SpellingLoc,
+    SourceMgr.createExpansionLoc(SpellingLoc,
                                      ReadSourceLocation(*F, Record[2]),
                                      ReadSourceLocation(*F, Record[3]),
                                      Record[4],
@@ -1741,16 +1741,16 @@ void ASTReader::SetIdentifierIsMacro(IdentifierInfo *II, Module &F,
 }
 
 void ASTReader::ReadDefinedMacros() {
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    Module &F = *Chain[N - I - 1];
-    llvm::BitstreamCursor &MacroCursor = F.MacroCursor;
+  for (ModuleReverseIterator I = ModuleMgr.rbegin(),
+      E = ModuleMgr.rend(); I != E; ++I) {
+    llvm::BitstreamCursor &MacroCursor = (*I)->MacroCursor;
 
     // If there was no preprocessor block, skip this file.
     if (!MacroCursor.getBitStreamReader())
       continue;
 
     llvm::BitstreamCursor Cursor = MacroCursor;
-    Cursor.JumpToBit(F.MacroStartOffset);
+    Cursor.JumpToBit((*I)->MacroStartOffset);
 
     RecordData Record;
     while (true) {
@@ -2466,8 +2466,9 @@ ASTReader::ReadASTBlock(Module &F) {
 }
 
 ASTReader::ASTReadResult ASTReader::validateFileEntries() {
-  for (unsigned CI = 0, CN = Chain.size(); CI != CN; ++CI) {
-    Module *F = Chain[CI];
+  for (ModuleIterator I = ModuleMgr.begin(),
+      E = ModuleMgr.end(); I != E; ++I) {
+    Module *F = *I;
     llvm::BitstreamCursor &SLocEntryCursor = F->SLocEntryCursor;
 
     for (unsigned i = 0, e = F->LocalNumSLocFileEntries; i != e; ++i) {
@@ -2583,9 +2584,10 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
          Id != IdEnd; ++Id)
       Identifiers.push_back(Id->second);
     // We need to search the tables in all files.
-    for (unsigned J = 0, M = Chain.size(); J != M; ++J) {
+    for (ModuleIterator J = ModuleMgr.begin(),
+        M = ModuleMgr.end(); J != M; ++J) {
       ASTIdentifierLookupTable *IdTable
-        = (ASTIdentifierLookupTable *)Chain[J]->IdentifierLookupTable;
+        = (ASTIdentifierLookupTable *)(*J)->IdentifierLookupTable;
       // Not all AST files necessarily have identifier tables, only the useful
       // ones.
       if (!IdTable)
@@ -2593,7 +2595,7 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
       for (unsigned I = 0, N = Identifiers.size(); I != N; ++I) {
         IdentifierInfo *II = Identifiers[I];
         // Look in the on-disk hash tables for an entry for this identifier
-        ASTIdentifierLookupTrait Info(*this, *Chain[J], II);
+        ASTIdentifierLookupTrait Info(*this, *(*J), II);
         std::pair<const char*,unsigned> Key(II->getNameStart(),II->getLength());
         ASTIdentifierLookupTable::iterator Pos = IdTable->find(Key, &Info);
         if (Pos == IdTable->end())
@@ -2623,7 +2625,7 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
         OriginalFileID = SourceMgr.getDecomposedLoc(Loc).first;
     }
     else {
-      OriginalFileID = FileID::get(Chain[0]->SLocEntryBaseID 
+      OriginalFileID = FileID::get(ModuleMgr.getPrimaryModule().SLocEntryBaseID
                                         + OriginalFileID.getOpaqueValue() - 1);
     }
 
@@ -2636,9 +2638,9 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
 
 ASTReader::ASTReadResult ASTReader::ReadASTCore(StringRef FileName,
                                                 ModuleKind Type) {
-  Module *Prev = Chain.empty() ? 0 : Chain.back();
-  Chain.push_back(new Module(Type));
-  Module &F = *Chain.back();
+  Module *Prev = !ModuleMgr.size() ? 0 : &ModuleMgr.getLastModule();
+  ModuleMgr.addModule(Type);
+  Module &F = ModuleMgr.getLastModule();
   if (Prev)
     Prev->NextInSource = &F;
   else
@@ -3062,12 +3064,12 @@ bool ASTReader::ParseLanguageOptions(
 }
 
 void ASTReader::ReadPreprocessedEntities() {
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    Module &F = *Chain[I];
+  for (ModuleIterator I = ModuleMgr.begin(), E = ModuleMgr.end(); I != E; ++I) {
+    Module &F = *(*I);
     if (!F.PreprocessorDetailCursor.getBitStreamReader())
       continue;
 
-    SavedStreamPosition SavedPosition(F.PreprocessorDetailCursor);  
+    SavedStreamPosition SavedPosition(F.PreprocessorDetailCursor);
     F.PreprocessorDetailCursor.JumpToBit(F.PreprocessorDetailStartOffset);
     while (LoadPreprocessedEntity(F)) { }
   }
@@ -3085,8 +3087,8 @@ PreprocessedEntity *ASTReader::ReadPreprocessedEntityAtOffset(uint64_t Offset) {
 
 HeaderFileInfo ASTReader::GetHeaderFileInfo(const FileEntry *FE) {
   HeaderFileInfoTrait Trait(FE->getName());
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    Module &F = *Chain[I];
+  for (ModuleIterator I = ModuleMgr.begin(), E = ModuleMgr.end(); I != E; ++I) {
+    Module &F = *(*I);
     HeaderFileInfoLookupTable *Table
       = static_cast<HeaderFileInfoLookupTable *>(F.HeaderFileInfoTable);
     if (!Table)
@@ -3109,8 +3111,8 @@ HeaderFileInfo ASTReader::GetHeaderFileInfo(const FileEntry *FE) {
 }
 
 void ASTReader::ReadPragmaDiagnosticMappings(Diagnostic &Diag) {
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    Module &F = *Chain[I];
+  for (ModuleIterator I = ModuleMgr.begin(), E = ModuleMgr.end(); I != E; ++I) {
+    Module &F = *(*I);
     unsigned Idx = 0;
     while (Idx < F.PragmaDiagMappings.size()) {
       SourceLocation Loc = ReadSourceLocation(F, F.PragmaDiagMappings[Idx++]);
@@ -4319,8 +4321,9 @@ void ASTReader::dump() {
 /// Return the amount of memory used by memory buffers, breaking down
 /// by heap-backed versus mmap'ed memory.
 void ASTReader::getMemoryBufferSizes(MemoryBufferSizes &sizes) const {
-  for (unsigned i = 0, e = Chain.size(); i != e; ++i)
-    if (llvm::MemoryBuffer *buf = Chain[i]->Buffer.get()) {
+  for (ModuleConstIterator I = ModuleMgr.begin(),
+      E = ModuleMgr.end(); I != E; ++I) {
+    if (llvm::MemoryBuffer *buf = (*I)->Buffer.get()) {
       size_t bytes = buf->getBufferSize();
       switch (buf->getBufferKind()) {
         case llvm::MemoryBuffer::MemoryBuffer_Malloc:
@@ -4331,6 +4334,7 @@ void ASTReader::getMemoryBufferSizes(MemoryBufferSizes &sizes) const {
           break;
       }
     }
+  }
 }
 
 void ASTReader::InitializeSema(Sema &S) {
@@ -4417,7 +4421,7 @@ void ASTReader::InitializeSema(Sema &S) {
 
   // The special data sets below always come from the most recent PCH,
   // which is at the front of the chain.
-  Module &F = *Chain.front();
+  Module &F = ModuleMgr.getPrimaryModule();
 
   // If there were any pending implicit instantiations, deserialize them
   // and add them to Sema's queue of such instantiations.
@@ -4474,9 +4478,9 @@ void ASTReader::InitializeSema(Sema &S) {
 IdentifierInfo* ASTReader::get(const char *NameStart, const char *NameEnd) {
   // Try to find this name within our on-disk hash tables. We start with the
   // most recent one, since that one contains the most up-to-date info.
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
+  for (ModuleIterator I = ModuleMgr.begin(), E = ModuleMgr.end(); I != E; ++I) {
     ASTIdentifierLookupTable *IdTable
-        = (ASTIdentifierLookupTable *)Chain[I]->IdentifierLookupTable;
+        = (ASTIdentifierLookupTable *)(*I)->IdentifierLookupTable;
     if (!IdTable)
       continue;
     std::pair<const char*, unsigned> Key(NameStart, NameEnd - NameStart);
@@ -4519,9 +4523,9 @@ namespace clang {
 }
 
 ASTIdentifierIterator::ASTIdentifierIterator(const ASTReader &Reader)
-  : Reader(Reader), Index(Reader.Chain.size() - 1) {
+  : Reader(Reader), Index(Reader.ModuleMgr.size() - 1) {
   ASTIdentifierLookupTable *IdTable
-    = (ASTIdentifierLookupTable *)Reader.Chain[Index]->IdentifierLookupTable;
+    = (ASTIdentifierLookupTable *)Reader.ModuleMgr[Index].IdentifierLookupTable;
   Current = IdTable->key_begin();
   End = IdTable->key_end();
 }
@@ -4534,7 +4538,8 @@ StringRef ASTIdentifierIterator::Next() {
 
     --Index;
     ASTIdentifierLookupTable *IdTable
-      = (ASTIdentifierLookupTable *)Reader.Chain[Index]->IdentifierLookupTable;
+      = (ASTIdentifierLookupTable *)Reader.ModuleMgr[Index].
+        IdentifierLookupTable;
     Current = IdTable->key_begin();
     End = IdTable->key_end();
   }
@@ -4553,8 +4558,8 @@ IdentifierIterator *ASTReader::getIdentifiers() const {
 std::pair<ObjCMethodList, ObjCMethodList>
 ASTReader::ReadMethodPool(Selector Sel) {
   // Find this selector in a hash table. We want to find the most recent entry.
-  for (unsigned I = 0, N = Chain.size(); I != N; ++I) {
-    Module &F = *Chain[I];
+  for (ModuleIterator I = ModuleMgr.begin(), E = ModuleMgr.end(); I != E; ++I) {
+    Module &F = *(*I);
     if (!F.SelectorLookupTable)
       continue;
 
@@ -5320,8 +5325,6 @@ ASTReader::ASTReader(SourceManager &SourceMgr, FileManager &FileMgr,
 }
 
 ASTReader::~ASTReader() {
-  for (unsigned i = 0, e = Chain.size(); i != e; ++i)
-    delete Chain[e - i - 1];
   // Delete all visible decl lookup tables
   for (DeclContextOffsetsMap::iterator I = DeclContextOffsets.begin(),
                                        E = DeclContextOffsets.end();

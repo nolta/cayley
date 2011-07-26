@@ -96,25 +96,25 @@ void TextDiagnosticPrinter::HighlightRange(const CharSourceRange &R,
   if (Begin == End && R.getEnd().isMacroID())
     End = SM.getExpansionRange(R.getEnd()).second;
 
-  unsigned StartLineNo = SM.getInstantiationLineNumber(Begin);
+  unsigned StartLineNo = SM.getExpansionLineNumber(Begin);
   if (StartLineNo > LineNo || SM.getFileID(Begin) != FID)
     return;  // No intersection.
 
-  unsigned EndLineNo = SM.getInstantiationLineNumber(End);
+  unsigned EndLineNo = SM.getExpansionLineNumber(End);
   if (EndLineNo < LineNo || SM.getFileID(End) != FID)
     return;  // No intersection.
 
   // Compute the column number of the start.
   unsigned StartColNo = 0;
   if (StartLineNo == LineNo) {
-    StartColNo = SM.getInstantiationColumnNumber(Begin);
+    StartColNo = SM.getExpansionColumnNumber(Begin);
     if (StartColNo) --StartColNo;  // Zero base the col #.
   }
 
   // Compute the column number of the end.
   unsigned EndColNo = CaretLine.size();
   if (EndLineNo == LineNo) {
-    EndColNo = SM.getInstantiationColumnNumber(End);
+    EndColNo = SM.getExpansionColumnNumber(End);
     if (EndColNo) {
       --EndColNo;  // Zero base the col #.
 
@@ -300,7 +300,7 @@ static SourceLocation skipToMacroArgExpansion(const SourceManager &SM,
                                                   SourceLocation StartLoc) {
   for (SourceLocation L = StartLoc; L.isMacroID();
        L = SM.getImmediateSpellingLoc(L)) {
-    if (SM.isMacroArgInstantiation(L))
+    if (SM.isMacroArgExpansion(L))
       return L;
   }
 
@@ -317,12 +317,12 @@ static SourceLocation getImmediateMacroCallerLoc(const SourceManager &SM,
   // When we have the location of (part of) an expanded parameter, its spelling
   // location points to the argument as typed into the macro call, and
   // therefore is used to locate the macro caller.
-  if (SM.isMacroArgInstantiation(Loc))
+  if (SM.isMacroArgExpansion(Loc))
     return SM.getImmediateSpellingLoc(Loc);
 
   // Otherwise, the caller of the macro is located where this macro is
   // expanded (while the spelling is part of the macro definition).
-  return SM.getImmediateInstantiationRange(Loc).first;
+  return SM.getImmediateExpansionRange(Loc).first;
 }
 
 /// Gets the location of the immediate macro callee, one level down the stack
@@ -334,8 +334,8 @@ static SourceLocation getImmediateMacroCalleeLoc(const SourceManager &SM,
   // When we have the location of (part of) an expanded parameter, its
   // expansion location points to the unexpanded paramater reference within
   // the macro definition (or callee).
-  if (SM.isMacroArgInstantiation(Loc))
-    return SM.getImmediateInstantiationRange(Loc).first;
+  if (SM.isMacroArgExpansion(Loc))
+    return SM.getImmediateExpansionRange(Loc).first;
 
   // Otherwise, the callee of the macro is located where this location was
   // spelled inside the macro definition.
@@ -519,7 +519,7 @@ void TextDiagnosticPrinter::EmitCaretDiagnostic(SourceLocation Loc,
         // We have an insertion hint. Determine whether the inserted
         // code is on the same line as the caret.
         std::pair<FileID, unsigned> HintLocInfo
-          = SM.getDecomposedInstantiationLoc(Hint->RemoveRange.getBegin());
+          = SM.getDecomposedExpansionLoc(Hint->RemoveRange.getBegin());
         if (SM.getLineNumber(HintLocInfo.first, HintLocInfo.second) ==
               SM.getLineNumber(FID, FileOffset)) {
           // Insert the new code into the line just below the code

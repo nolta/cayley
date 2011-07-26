@@ -48,7 +48,7 @@ void SourceLocation::print(raw_ostream &OS, const SourceManager &SM)const{
       OS << "<invalid>";
       return;
     }
-    // The instantiation and spelling pos is identical for file locs.
+    // The macro expansion and spelling pos is identical for file locs.
     OS << PLoc.getFilename() << ':' << PLoc.getLine()
        << ':' << PLoc.getColumn();
     return;
@@ -85,14 +85,14 @@ FullSourceLoc FullSourceLoc::getSpellingLoc() const {
   return FullSourceLoc(SrcMgr->getSpellingLoc(*this), *SrcMgr);
 }
 
-unsigned FullSourceLoc::getInstantiationLineNumber(bool *Invalid) const {
+unsigned FullSourceLoc::getExpansionLineNumber(bool *Invalid) const {
   assert(isValid());
-  return SrcMgr->getInstantiationLineNumber(*this, Invalid);
+  return SrcMgr->getExpansionLineNumber(*this, Invalid);
 }
 
-unsigned FullSourceLoc::getInstantiationColumnNumber(bool *Invalid) const {
+unsigned FullSourceLoc::getExpansionColumnNumber(bool *Invalid) const {
   assert(isValid());
-  return SrcMgr->getInstantiationColumnNumber(*this, Invalid);
+  return SrcMgr->getExpansionColumnNumber(*this, Invalid);
 }
 
 unsigned FullSourceLoc::getSpellingLineNumber(bool *Invalid) const {

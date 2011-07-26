@@ -2490,7 +2490,7 @@ CodeCompletionResult::CreateCodeCompletionString(Sema &S,
         if (Idx > StartParameter)
           Result.AddChunk(CodeCompletionString::CK_HorizontalSpace);
         if (IdentifierInfo *II = Sel.getIdentifierInfoForSlot(Idx))
-          Keyword += II->getName().str();
+          Keyword += II->getName();
         Keyword += ":";
         if (Idx < StartParameter || AllParametersAreInformative)
           Result.AddInformativeChunk(Result.getAllocator().CopyString(Keyword));
@@ -2511,7 +2511,7 @@ CodeCompletionResult::CreateCodeCompletionString(Sema &S,
         Arg = "(" + Arg + ")";
         if (IdentifierInfo *II = (*P)->getIdentifier())
           if (DeclaringEntity || AllParametersAreInformative)
-            Arg += II->getName().str();
+            Arg += II->getName();
       }
       
       if (Method->isVariadic() && (P + 1) == PEnd)
@@ -3706,7 +3706,7 @@ void Sema::CodeCompleteQualifiedId(Scope *S, CXXScopeSpec &SS,
   LookupVisibleDecls(Ctx, LookupOrdinaryName, Consumer);
 
   HandleCodeCompleteResults(this, CodeCompleter, 
-                            CodeCompletionContext::CCC_Name,
+                            Results.getCompletionContext(),
                             Results.data(),Results.size());
 }
 
@@ -4960,7 +4960,7 @@ void Sema::CodeCompleteObjCClassMessage(Scope *S, ParsedType Receiver,
   
   ResultBuilder Results(*this, CodeCompleter->getAllocator(),
               CodeCompletionContext(CodeCompletionContext::CCC_ObjCClassMessage,
-                                    T));
+                                    T, SelIdents, NumSelIdents));
     
   AddClassMessageCompletions(*this, S, Receiver, SelIdents, NumSelIdents, 
                              AtArgumentExpression, IsSuper, Results);
@@ -5025,7 +5025,7 @@ void Sema::CodeCompleteObjCInstanceMessage(Scope *S, ExprTy *Receiver,
   // Build the set of methods we can see.
   ResultBuilder Results(*this, CodeCompleter->getAllocator(),
            CodeCompletionContext(CodeCompletionContext::CCC_ObjCInstanceMessage,
-                                 ReceiverType));
+                                 ReceiverType, SelIdents, NumSelIdents));
   
   Results.EnterNewScope();
 
@@ -5203,7 +5203,7 @@ void Sema::CodeCompleteObjCSelector(Scope *S, IdentifierInfo **SelIdents,
         }
       }
       
-      Accumulator += Sel.getNameForSlot(I).str();
+      Accumulator += Sel.getNameForSlot(I);
       Accumulator += ':';
     }
     Builder.AddTypedTextChunk(Builder.getAllocator().CopyString( Accumulator));
@@ -5530,7 +5530,7 @@ void Sema::CodeCompleteObjCPropertySynthesizeIvar(Scope *S,
   bool SawSimilarlyNamedIvar = false;
   std::string NameWithPrefix;
   NameWithPrefix += '_';
-  NameWithPrefix += PropertyName->getName().str();
+  NameWithPrefix += PropertyName->getName();
   std::string NameWithSuffix = PropertyName->getName().str();
   NameWithSuffix += '_';
   for(; Class; Class = Class->getSuperClass()) {
