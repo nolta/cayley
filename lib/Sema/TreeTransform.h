@@ -1207,7 +1207,16 @@ public:
                                             Stmt *Body) {
     return getSema().ActOnObjCAutoreleasePoolStmt(AtLoc, Body);
   }
-  
+
+  /// \brief Build the collection operand to a new Objective-C fast
+  /// enumeration statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildObjCForCollectionOperand(SourceLocation forLoc,
+                                             Expr *collection) {
+    return getSema().ActOnObjCForCollectionOperand(forLoc, collection);
+  }
 
   /// \brief Build a new Objective-C fast enumeration statement.
   ///
@@ -5574,6 +5583,10 @@ TreeTransform<Derived>::TransformObjCForCollectionStmt(
   
   // Transform the collection expression.
   ExprResult Collection = getDerived().TransformExpr(S->getCollection());
+  if (Collection.isInvalid())
+    return StmtError();
+  Collection = getDerived().RebuildObjCForCollectionOperand(S->getForLoc(),
+                                                            Collection.take());
   if (Collection.isInvalid())
     return StmtError();
   

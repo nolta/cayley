@@ -2224,7 +2224,7 @@ ASTReader::ReadASTBlock(Module &F) {
         uint32_t Offset = io::ReadUnalignedLE32(Data);
         uint16_t Len = io::ReadUnalignedLE16(Data);
         StringRef Name = StringRef((const char*)Data, Len);
-        Module *OM = Modules.lookup(Name);
+        Module *OM = ModuleMgr.lookup(Name);
         if (!OM) {
           Error("SourceLocation remap refers to unknown module");
           return Failure;
@@ -2236,7 +2236,6 @@ ASTReader::ReadASTBlock(Module &F) {
       }
       break;
     }
-
 
     case SOURCE_MANAGER_LINE_TABLE:
       if (ParseLineTable(F, Record))
@@ -2562,7 +2561,7 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
   PreloadSLocEntries.clear();
   
   // Check the predefines buffers.
-  if (!DisableValidation && CheckPredefinesBuffers())
+  if (!DisableValidation && Type != MK_Module && CheckPredefinesBuffers())
     return IgnorePCH;
 
   if (PP) {
@@ -2578,6 +2577,11 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
     // since de-serializing declarations or macro definitions can add
     // new entries into the identifier table, invalidating the
     // iterators.
+    //
+    // FIXME: We need a lazier way to load this information, e.g., by marking
+    // the identifier data as 'dirty', so that it will be looked up in the
+    // AST file(s) if it is uttered in the source. This could save us some
+    // module load time.
     SmallVector<IdentifierInfo *, 128> Identifiers;
     for (IdentifierTable::iterator Id = PP->getIdentifierTable().begin(),
                                 IdEnd = PP->getIdentifierTable().end();
@@ -2638,19 +2642,7 @@ ASTReader::ASTReadResult ASTReader::ReadAST(const std::string &FileName,
 
 ASTReader::ASTReadResult ASTReader::ReadASTCore(StringRef FileName,
                                                 ModuleKind Type) {
-  Module *Prev = !ModuleMgr.size() ? 0 : &ModuleMgr.getLastModule();
-  ModuleMgr.addModule(Type);
-  Module &F = ModuleMgr.getLastModule();
-  if (Prev)
-    Prev->NextInSource = &F;
-  else
-    FirstInSource = &F;
-  F.Loaders.push_back(Prev);
-
-  Modules[FileName.str()] = &F;
-
-  // Set the AST file name.
-  F.FileName = FileName;
+  Module &F = ModuleMgr.addModule(FileName, Type);
 
   if (FileName != "-") {
     CurrentDir = llvm::sys::path::parent_path(FileName);
@@ -4403,7 +4395,7 @@ void ASTReader::InitializeSema(Sema &S) {
     SemaObj->StdBadAlloc = SemaDeclRefs[1];
   }
 
-  for (Module *F = FirstInSource; F; F = F->NextInSource) {
+  for (Module *F = &ModuleMgr.getPrimaryModule(); F; F = F->NextInSource) {
 
     // If there are @selector references added them to its pool. This is for
     // implementation of -Wselector.
@@ -5290,7 +5282,7 @@ ASTReader::ASTReader(Preprocessor &PP, ASTContext *Context,
   : Listener(new PCHValidator(PP, *this)), DeserializationListener(0),
     SourceMgr(PP.getSourceManager()), FileMgr(PP.getFileManager()),
     Diags(PP.getDiagnostics()), SemaObj(0), PP(&PP), Context(Context),
-    Consumer(0), FirstInSource(0), RelocatablePCH(false), isysroot(isysroot), 
+    Consumer(0), RelocatablePCH(false), isysroot(isysroot),
     DisableValidation(DisableValidation),
     DisableStatCache(DisableStatCache), NumStatHits(0), NumStatMisses(0), 
     NumSLocEntriesRead(0), TotalNumSLocEntries(0), 
@@ -5309,7 +5301,7 @@ ASTReader::ASTReader(SourceManager &SourceMgr, FileManager &FileMgr,
                      Diagnostic &Diags, StringRef isysroot,
                      bool DisableValidation, bool DisableStatCache)
   : DeserializationListener(0), SourceMgr(SourceMgr), FileMgr(FileMgr),
-    Diags(Diags), SemaObj(0), PP(0), Context(0), Consumer(0), FirstInSource(0),
+    Diags(Diags), SemaObj(0), PP(0), Context(0), Consumer(0),
     RelocatablePCH(false), isysroot(isysroot), 
     DisableValidation(DisableValidation), DisableStatCache(DisableStatCache), 
     NumStatHits(0), NumStatMisses(0), NumSLocEntriesRead(0), 
@@ -5366,4 +5358,38 @@ Module::~Module() {
   delete static_cast<ASTIdentifierLookupTable *>(IdentifierLookupTable);
   delete static_cast<HeaderFileInfoLookupTable *>(HeaderFileInfoTable);
   delete static_cast<ASTSelectorLookupTable *>(SelectorLookupTable);
+}
+
+/// \brief Creates a new module and adds it to the list of known modules
+Module &ModuleManager::addModule(StringRef FileName, ModuleKind Type) {
+  Module *Prev = !size() ? 0 : &getLastModule();
+  Module *Current = new Module(Type);
+
+  Current->FileName = FileName.str();
+
+  Chain.push_back(Current);
+  Modules[FileName.str()] = Current;
+
+  if (Prev)
+    Prev->NextInSource = Current;
+  Current->Loaders.push_back(Prev);
+
+  return *Current;
+}
+
+/// \brief Exports the list of loaded modules with their corresponding names
+void ModuleManager::exportLookup(SmallVector<ModuleOffset, 16> &Target) {
+  Target.reserve(size());
+  for (llvm::StringMap<Module*>::const_iterator
+           I = Modules.begin(), E = Modules.end();
+       I != E; ++I) {
+    Target.push_back(ModuleOffset(I->getValue()->SLocEntryBaseOffset,
+                                   I->getKey()));
+  }
+  std::sort(Target.begin(), Target.end());
+}
+
+ModuleManager::~ModuleManager() {
+  for (unsigned i = 0, e = Chain.size(); i != e; ++i)
+    delete Chain[e - i - 1];
 }
