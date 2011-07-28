@@ -1128,6 +1128,8 @@ def err_attribute_wrong_number_arguments : Error<
   ":requires exactly %0 arguments}0">;
 def err_attribute_too_many_arguments : Error<
   "attribute takes no more than %0 argument%s0">;
+def err_attribute_too_few_arguments : Error<
+  "attribute takes at least %0 argument%s0">;
 def err_iboutletcollection_type : Error<
   "invalid type %0 as argument of iboutletcollection attribute">;
 def err_iboutletcollection_object_type : Error<
@@ -1249,7 +1251,7 @@ def warn_attribute_wrong_decl_type : Warning<
   "parameters and methods|functions, methods and blocks|"
   "classes and virtual methods|functions, methods, and parameters|"
   "classes|virtual methods|class members|variables|methods|"
-  "variables, functions and labels}1">;
+  "variables, functions and labels|fields and global variables}1">;
 def err_attribute_wrong_decl_type : Error<
   "%0 attribute only applies to %select{functions|unions|"
   "variables and functions|functions and methods|parameters|"
@@ -1287,6 +1289,9 @@ def warn_objc_precise_lifetime_meaningless : Error<
 def warn_label_attribute_not_unused : Warning<
   "The only valid attribute for labels is 'unused'">;
 def err_invalid_pcs : Error<"Invalid PCS type">;
+def err_attribute_can_be_applied_only_to_value_decl : Error<
+  "%0 attribute can only be applied to value declarations">;
+
 
 // Availability attribute
 def warn_availability_unknown_platform : Warning<
@@ -3544,7 +3549,11 @@ def err_typecheck_convert_incompatible : Error<
   "%select{from incompatible type|to parameter of incompatible type|"
   "from a function with incompatible result type|to incompatible type|"
   "with an expression of incompatible type|to parameter of incompatible type|"
-  "to incompatible type}2 %1">;
+  "to incompatible type}2 %1; "
+  "%select{|dereference with *|"
+  "take the address with &|"
+  "remove *|"
+  "remove &}3">;
 def warn_incompatible_qualified_id : Warning<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
@@ -3557,13 +3566,21 @@ def ext_typecheck_convert_pointer_int : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
-  "with an expression of type|to parameter of type|to type}2 %1">;
+  "with an expression of type|to parameter of type|to type}2 %1; "
+  "%select{|dereference with *|"
+  "take the address with &|"
+  "remove *|"
+  "remove &}3">;
 def ext_typecheck_convert_int_pointer : ExtWarn<
   "incompatible integer to pointer conversion "
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
-  "with an expression of type|to parameter of type|to type}2 %1">;
+  "with an expression of type|to parameter of type|to type}2 %1; "
+  "%select{|dereference with *|"
+  "take the address with &|"
+  "remove *|"
+  "remove &}3">;
 def ext_typecheck_convert_pointer_void_func : Extension<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
@@ -3582,7 +3599,11 @@ def ext_typecheck_convert_incompatible_pointer : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
-  "with an expression of type|to parameter of type|to type}2 %1">,
+  "with an expression of type|to parameter of type|to type}2 %1"
+  "%select{|dereference with *|"
+  "take the address with &|"
+  "remove *|"
+  "remove &}3">,
   InGroup<DiagGroup<"incompatible-pointer-types">>;
 def ext_typecheck_convert_discards_qualifiers : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"

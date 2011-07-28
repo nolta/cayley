@@ -27,7 +27,7 @@ using namespace sema;
 
 /// These constants match the enumerated choices of
 /// warn_attribute_wrong_decl_type and err_attribute_wrong_decl_type.
-enum {
+enum AttributeDeclType {
   ExpectedFunction,
   ExpectedUnion,
   ExpectedVariableOrFunction,
@@ -42,7 +42,8 @@ enum {
   ExpectedClassMember,
   ExpectedVariable,
   ExpectedMethod,
-  ExpectedVariableFunctionOrLabel
+  ExpectedVariableFunctionOrLabel,
+  ExpectedFieldOrGlobalVar
 };
 
 //===----------------------------------------------------------------------===//
@@ -204,6 +205,67 @@ static bool checkAttributeNumArgs(Sema &S, const AttributeList &Attr,
   return true;
 }
 
+///
+/// \brief Check the total number of argumenation, whether parsed by clang
+/// as arguments or parameters. Outputs a warning.
+/// \return false if the number of argumenation units does not match expectation
+///
+static bool checkAttributeNumArgsPlusParams(Sema &S, const AttributeList &Attr,
+                                             unsigned int Num,
+                                             bool moreok = false) {
+  unsigned int numArgsPlusParams = 0;
+
+  if (Attr.getParameterName())
+    numArgsPlusParams++;
+
+  numArgsPlusParams += Attr.getNumArgs();
+
+  if (moreok && numArgsPlusParams < Num) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_too_few_arguments) << Num;
+    return false;
+  }
+
+  if (!moreok && numArgsPlusParams != Num) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_number_arguments) << Num;
+    return false;
+  }
+
+  return true;
+}
+
+///
+/// \brief Check if passed in Decl is a field or potentially shared global var
+/// \return true if the Decl is a field or potentially shared global variable
+///
+static bool mayBeSharedVariable(Decl *D) {
+  if (isa<FieldDecl>(D))
+    return true;
+  if(VarDecl *vd = dyn_cast<VarDecl>(D))
+    return (vd->hasGlobalStorage() && !(vd->isThreadSpecified()));
+
+  return false;
+}
+
+///
+/// \brief Check if passed in Decl is a pointer type.
+/// Note that this function may produce an error message.
+/// \return true if the Decl is a pointer type; false otherwise
+///
+bool checkIsPointer(Sema & S, Decl * D, const AttributeList & Attr) {
+  if(ValueDecl * vd = dyn_cast <ValueDecl>(D)) {
+    QualType QT = vd->getType();
+    if(QT->isAnyPointerType()) {
+      return true;
+    }
+    S.Diag(Attr.getLoc(), diag::warn_pointer_attribute_wrong_type)
+      << Attr.getName()->getName() << QT;
+  } else {
+    S.Diag(Attr.getLoc(), diag::err_attribute_can_be_applied_only_to_value_decl)
+      << Attr.getName();
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // Attribute Implementations
 //===----------------------------------------------------------------------===//
@@ -211,6 +273,221 @@ static bool checkAttributeNumArgs(Sema &S, const AttributeList &Attr,
 // FIXME: All this manual attribute parsing code is gross. At the
 // least add some helper functions to check most argument patterns (#
 // and types of args).
+
+static void handleGuardedVarAttr(Sema &S, Decl *D, const AttributeList &Attr,
+                                 bool pointer = false) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgs(S, Attr, 0))
+    return;
+
+  // D must be either a member field or global (potentially shared) variable.
+  if (!mayBeSharedVariable(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 15; /*fields and global vars*/;
+    return;
+  }
+
+  if (pointer && !checkIsPointer(S, D, Attr))
+    return;
+
+  if (pointer)
+    D->addAttr(::new (S.Context) PtGuardedVarAttr(Attr.getLoc(), S.Context));
+  else
+    D->addAttr(::new (S.Context) GuardedVarAttr(Attr.getLoc(), S.Context));
+}
+
+static void handleGuardedByAttr(Sema &S, Decl *D, const AttributeList &Attr,
+                                 bool pointer = false) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgsPlusParams(S, Attr, 1))
+    return;
+
+  // D must be either a member field or global (potentially shared) variable.
+  if (!mayBeSharedVariable(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 15; /*fields and global vars*/;
+    return;
+  }
+
+  if (pointer && !checkIsPointer(S, D, Attr))
+    return;
+
+  if (pointer)
+    D->addAttr(::new (S.Context) PtGuardedByAttr(Attr.getLoc(), S.Context));
+  else
+    D->addAttr(::new (S.Context) GuardedByAttr(Attr.getLoc(), S.Context));
+}
+
+
+static void handleLockableAttr(Sema &S, Decl *D, const AttributeList &Attr,
+                               bool scoped = false) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgs(S, Attr, 0))
+    return;
+
+  if (!isa<CXXRecordDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedClass;
+    return;
+  }
+
+  if (scoped)
+    D->addAttr(::new (S.Context) ScopedLockableAttr(Attr.getLoc(), S.Context));
+  else
+    D->addAttr(::new (S.Context) LockableAttr(Attr.getLoc(), S.Context));
+}
+
+static void handleNoThreadSafetyAttr(Sema &S, Decl *D,
+                                     const AttributeList &Attr) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgs(S, Attr, 0))
+    return;
+
+  if (!isFunction(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  D->addAttr(::new (S.Context) NoThreadSafetyAnalysisAttr(Attr.getLoc(),
+                                                          S.Context));
+}
+
+static void handleAcquireOrderAttr(Sema &S, Decl *D, const AttributeList &Attr,
+                                   bool before) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgsPlusParams(S, Attr, 1, /*moreok=*/true))
+    return;
+
+  // D must be either a member field or global (potentially shared) variable.
+  if (!mayBeSharedVariable(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << 15; /*fields and global vars*/;
+    return;
+  }
+
+  if (before)
+    D->addAttr(::new (S.Context) AcquiredBeforeAttr(Attr.getLoc(), S.Context));
+  else
+    D->addAttr(::new (S.Context) AcquiredAfterAttr(Attr.getLoc(), S.Context));
+}
+
+static void handleLockFunAttr(Sema &S, Decl *D, const AttributeList &Attr,
+                                   bool exclusive = false) {
+  assert(!Attr.isInvalid());
+
+  // zero or more arguments ok
+
+  if (!isFunction(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  if (exclusive)
+    D->addAttr(::new (S.Context) ExclusiveLockFunctionAttr(Attr.getLoc(),
+                                                           S.Context));
+  else
+    D->addAttr(::new (S.Context) SharedLockFunctionAttr(Attr.getLoc(),
+                                                        S.Context));
+}
+
+static void handleTrylockFunAttr(Sema &S, Decl *D, const AttributeList &Attr,
+                                      bool exclusive = false) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgsPlusParams(S, Attr, 1, /*moreok=*/true))
+    return;
+
+  if (!isFunction(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  if (exclusive)
+    D->addAttr(::new (S.Context) ExclusiveTrylockFunctionAttr(Attr.getLoc(),
+                                                           S.Context));
+  else
+    D->addAttr(::new (S.Context) SharedTrylockFunctionAttr(Attr.getLoc(),
+                                                        S.Context));
+
+}
+
+static void handleLocksRequiredAttr(Sema &S, Decl *D, const AttributeList &Attr,
+                                   bool exclusive = false) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgsPlusParams(S, Attr, 1, /*moreok=*/true))
+    return;
+
+  if (!isFunction(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  if (exclusive)
+    D->addAttr(::new (S.Context) ExclusiveLocksRequiredAttr(Attr.getLoc(),
+                                                           S.Context));
+  else
+    D->addAttr(::new (S.Context) SharedLocksRequiredAttr(Attr.getLoc(),
+                                                        S.Context));
+}
+
+
+static void handleUnlockFunAttr(Sema &S, Decl *D,
+                                     const AttributeList &Attr) {
+  assert(!Attr.isInvalid());
+
+  // zero or more arguments ok
+
+  if (!isFunction(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  D->addAttr(::new (S.Context) UnlockFunctionAttr(Attr.getLoc(), S.Context));
+}
+
+static void handleLockReturnedAttr(Sema &S, Decl *D,
+                                     const AttributeList &Attr) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgsPlusParams(S, Attr, 1))
+    return;
+
+  if (!isFunction(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  D->addAttr(::new (S.Context) LockReturnedAttr(Attr.getLoc(), S.Context));
+}
+
+static void handleLocksExcludedAttr(Sema &S, Decl *D,
+                                     const AttributeList &Attr) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgsPlusParams(S, Attr, 1, /*moreok=*/true))
+    return;
+
+  if (!isFunction(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  D->addAttr(::new (S.Context) LocksExcludedAttr(Attr.getLoc(), S.Context));
+}
+
 
 static void handleExtVectorTypeAttr(Sema &S, Scope *scope, Decl *D,
                                     const AttributeList &Attr) {
@@ -3071,6 +3348,63 @@ static void ProcessInheritableDeclAttr(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_uuid:
     handleUuidAttr(S, D, Attr);
     break;
+
+  // Thread safety attributes:
+  case AttributeList::AT_guarded_var:
+    handleGuardedVarAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_pt_guarded_var:
+    handleGuardedVarAttr(S, D, Attr, /*pointer = */true);
+    break;
+  case AttributeList::AT_scoped_lockable:
+    handleLockableAttr(S, D, Attr, /*scoped = */true);
+    break;
+  case AttributeList::AT_no_thread_safety_analysis:
+    handleNoThreadSafetyAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_lockable:
+    handleLockableAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_guarded_by:
+    handleGuardedByAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_pt_guarded_by:
+    handleGuardedByAttr(S, D, Attr, /*pointer = */true);
+    break;
+  case AttributeList::AT_exclusive_lock_function:
+    handleLockFunAttr(S, D, Attr, /*exclusive = */true);
+    break;
+  case AttributeList::AT_exclusive_locks_required:
+    handleLocksRequiredAttr(S, D, Attr, /*exclusive = */true);
+    break;
+  case AttributeList::AT_exclusive_trylock_function:
+    handleTrylockFunAttr(S, D, Attr, /*exclusive = */true);
+    break;
+  case AttributeList::AT_lock_returned:
+    handleLockReturnedAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_locks_excluded:
+    handleLocksExcludedAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_shared_lock_function:
+    handleLockFunAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_shared_locks_required:
+    handleLocksRequiredAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_shared_trylock_function:
+    handleTrylockFunAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_unlock_function:
+    handleUnlockFunAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_acquired_before:
+    handleAcquireOrderAttr(S, D, Attr, /*before = */true);
+    break;
+  case AttributeList::AT_acquired_after:
+    handleAcquireOrderAttr(S, D, Attr, /*before = */false);
+    break;
+
   default:
     // Ask target about the attribute.
     const TargetAttributesSema &TargetAttrs = S.getTargetAttributesSema();
@@ -3179,15 +3513,18 @@ void Sema::ProcessDeclAttributes(Scope *S, Decl *D, const Declarator &PD,
                                  bool NonInheritable, bool Inheritable) {
   // It's valid to "forward-declare" #pragma weak, in which case we
   // have to do this.
-  if (Inheritable && !WeakUndeclaredIdentifiers.empty()) {
-    if (NamedDecl *ND = dyn_cast<NamedDecl>(D)) {
-      if (IdentifierInfo *Id = ND->getIdentifier()) {
-        llvm::DenseMap<IdentifierInfo*,WeakInfo>::iterator I
-          = WeakUndeclaredIdentifiers.find(Id);
-        if (I != WeakUndeclaredIdentifiers.end() && ND->hasLinkage()) {
-          WeakInfo W = I->second;
-          DeclApplyPragmaWeak(S, ND, W);
-          WeakUndeclaredIdentifiers[Id] = W;
+  if (Inheritable) {
+    LoadExternalWeakUndeclaredIdentifiers();
+    if (!WeakUndeclaredIdentifiers.empty()) {
+      if (NamedDecl *ND = dyn_cast<NamedDecl>(D)) {
+        if (IdentifierInfo *Id = ND->getIdentifier()) {
+          llvm::DenseMap<IdentifierInfo*,WeakInfo>::iterator I
+            = WeakUndeclaredIdentifiers.find(Id);
+          if (I != WeakUndeclaredIdentifiers.end() && ND->hasLinkage()) {
+            WeakInfo W = I->second;
+            DeclApplyPragmaWeak(S, ND, W);
+            WeakUndeclaredIdentifiers[Id] = W;
+          }
         }
       }
     }

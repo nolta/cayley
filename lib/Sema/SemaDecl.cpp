@@ -1086,12 +1086,28 @@ static bool ShouldDiagnoseUnusedDecl(const NamedDecl *D) {
   return true;
 }
 
+static void GenerateFixForUnusedDecl(const NamedDecl *D, ASTContext &Ctx,
+                                     FixItHint &Hint) {
+  if (isa<LabelDecl>(D)) {
+    SourceLocation AfterColon = Lexer::findLocationAfterToken(D->getLocEnd(),
+                tok::colon, Ctx.getSourceManager(), Ctx.getLangOptions(), true);
+    if (AfterColon.isInvalid())
+      return;
+    Hint = FixItHint::CreateRemoval(CharSourceRange::
+                                    getCharRange(D->getLocStart(), AfterColon));
+  }
+  return;
+}
+
 /// DiagnoseUnusedDecl - Emit warnings about declarations that are not used
 /// unless they are marked attr(unused).
 void Sema::DiagnoseUnusedDecl(const NamedDecl *D) {
+  FixItHint Hint;
   if (!ShouldDiagnoseUnusedDecl(D))
     return;
   
+  GenerateFixForUnusedDecl(D, Context, Hint);
+
   unsigned DiagID;
   if (isa<VarDecl>(D) && cast<VarDecl>(D)->isExceptionVariable())
     DiagID = diag::warn_unused_exception_param;
@@ -1100,7 +1116,7 @@ void Sema::DiagnoseUnusedDecl(const NamedDecl *D) {
   else
     DiagID = diag::warn_unused_variable;
 
-  Diag(D->getLocation(), DiagID) << D->getDeclName();
+  Diag(D->getLocation(), DiagID) << D->getDeclName() << Hint;
 }
 
 static void CheckPoppedLabel(LabelDecl *L, Sema &S) {
@@ -3330,6 +3346,23 @@ Sema::RegisterLocallyScopedExternCDecl(NamedDecl *ND,
   }
 }
 
+llvm::DenseMap<DeclarationName, NamedDecl *>::iterator
+Sema::findLocallyScopedExternalDecl(DeclarationName Name) {
+  if (ExternalSource) {
+    // Load locally-scoped external decls from the external source.
+    SmallVector<NamedDecl *, 4> Decls;
+    ExternalSource->ReadLocallyScopedExternalDecls(Decls);
+    for (unsigned I = 0, N = Decls.size(); I != N; ++I) {
+      llvm::DenseMap<DeclarationName, NamedDecl *>::iterator Pos
+        = LocallyScopedExternalDecls.find(Decls[I]->getDeclName());
+      if (Pos == LocallyScopedExternalDecls.end())
+        LocallyScopedExternalDecls[Decls[I]->getDeclName()] = Decls[I];
+    }
+  }
+  
+  return LocallyScopedExternalDecls.find(Name);
+}
+
 /// \brief Diagnose function specifiers on a declaration of an identifier that
 /// does not identify a function.
 void Sema::DiagnoseFunctionSpecifiers(Declarator& D) {
@@ -4008,7 +4041,7 @@ void Sema::CheckVariableDeclaration(VarDecl *NewVD,
     // an extern "C" variable, look for a non-visible extern "C"
     // declaration with the same name.
     llvm::DenseMap<DeclarationName, NamedDecl *>::iterator Pos
-      = LocallyScopedExternalDecls.find(NewVD->getDeclName());
+      = findLocallyScopedExternalDecl(NewVD->getDeclName());
     if (Pos != LocallyScopedExternalDecls.end())
       Previous.addDecl(Pos->second);
   }
@@ -4970,7 +5003,7 @@ void Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
     // an extern "C" function, look for a non-visible extern "C"
     // declaration with the same name.
     llvm::DenseMap<DeclarationName, NamedDecl *>::iterator Pos
-      = LocallyScopedExternalDecls.find(NewFD->getDeclName());
+      = findLocallyScopedExternalDecl(NewFD->getDeclName());
     if (Pos != LocallyScopedExternalDecls.end())
       Previous.addDecl(Pos->second);
   }
@@ -6584,7 +6617,7 @@ NamedDecl *Sema::ImplicitlyDefineFunction(SourceLocation Loc,
   // this name as a function or variable. If so, use that
   // (non-visible) declaration, and complain about it.
   llvm::DenseMap<DeclarationName, NamedDecl *>::iterator Pos
-    = LocallyScopedExternalDecls.find(&II);
+    = findLocallyScopedExternalDecl(&II);
   if (Pos != LocallyScopedExternalDecls.end()) {
     Diag(Loc, diag::warn_use_out_of_scope_declaration) << Pos->second;
     Diag(Pos->second->getLocation(), diag::note_previous_declaration);
