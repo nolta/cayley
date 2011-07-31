@@ -1391,6 +1391,16 @@ ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
                              S, SCAsWritten, DefArg);
 }
 
+SourceRange ParmVarDecl::getSourceRange() const {
+  if (!hasInheritedDefaultArg()) {
+    SourceRange ArgRange = getDefaultArgRange();
+    if (ArgRange.isValid())
+      return SourceRange(getOuterLocStart(), ArgRange.getEnd());
+  }
+
+  return DeclaratorDecl::getSourceRange();
+}
+
 Expr *ParmVarDecl::getDefaultArg() {
   assert(!hasUnparsedDefaultArg() && "Default argument is not yet parsed!");
   assert(!hasUninstantiatedDefaultArg() &&
@@ -1690,11 +1700,6 @@ void FunctionDecl::setParams(ASTContext &C,
     void *Mem = C.Allocate(sizeof(ParmVarDecl*)*NumParams);
     ParamInfo = new (Mem) ParmVarDecl*[NumParams];
     memcpy(ParamInfo, NewParamInfo, sizeof(ParmVarDecl*)*NumParams);
-
-    // Update source range. The check below allows us to set EndRangeLoc before
-    // setting the parameters.
-    if (EndRangeLoc.isInvalid() || EndRangeLoc == getLocation())
-      EndRangeLoc = NewParamInfo[NumParams-1]->getLocEnd();
   }
 }
 

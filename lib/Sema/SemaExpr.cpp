@@ -156,13 +156,9 @@ void Sema::DiagnoseSentinelCalls(NamedDecl *D, SourceLocation Loc,
   if (!attr)
     return;
 
-  // FIXME: In C++0x, if any of the arguments are parameter pack
-  // expansions, we can't check for the sentinel now.
   int sentinelPos = attr->getSentinel();
   int nullPos = attr->getNullPos();
 
-  // FIXME. ObjCMethodDecl and FunctionDecl need be derived from the same common
-  // base class. Then we won't be needing two versions of the same code.
   unsigned int i = 0;
   bool warnNotEnoughArgs = false;
   int isMethod = 0;
@@ -247,7 +243,22 @@ void Sema::DiagnoseSentinelCalls(NamedDecl *D, SourceLocation Loc,
   // Unfortunately, __null has type 'int'.
   if (isa<GNUNullExpr>(sentinelExpr)) return;
 
-  Diag(Loc, diag::warn_missing_sentinel) << isMethod;
+  SourceLocation MissingNilLoc 
+    = PP.getLocForEndOfToken(sentinelExpr->getLocEnd());
+  std::string NullValue;
+  if (isMethod && PP.getIdentifierInfo("nil")->hasMacroDefinition())
+    NullValue = "nil";
+  else if (PP.getIdentifierInfo("NULL")->hasMacroDefinition())
+    NullValue = "NULL";
+  else if (Context.getTypeSize(Context.IntTy)
+                                  == Context.getTypeSize(Context.getSizeType()))
+    NullValue = "0";
+  else
+    NullValue = "0L";
+  
+  Diag(MissingNilLoc, diag::warn_missing_sentinel) 
+    << isMethod 
+    << FixItHint::CreateInsertion(MissingNilLoc, ", " + NullValue);
   Diag(D->getLocation(), diag::note_sentinel_here) << isMethod;
 }
 
@@ -3427,10 +3438,18 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   // If too few arguments are available (and we don't have default
   // arguments for the remaining parameters), don't make the call.
   if (NumArgs < NumArgsInProto) {
-    if (!FDecl || NumArgs < FDecl->getMinRequiredArguments())
-      return Diag(RParenLoc, diag::err_typecheck_call_too_few_args)
+    if (!FDecl || NumArgs < FDecl->getMinRequiredArguments()) {
+      Diag(RParenLoc, diag::err_typecheck_call_too_few_args)
         << Fn->getType()->isBlockPointerType()
         << NumArgsInProto << NumArgs << Fn->getSourceRange();
+
+      // Emit the location of the prototype.
+      if (FDecl && !FDecl->getBuiltinID())
+        Diag(FDecl->getLocStart(), diag::note_callee_decl)
+          << FDecl;
+
+      return true;
+    }
     Call->setNumArgs(Context, NumArgsInProto);
   }
 
@@ -3447,9 +3466,8 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
 
       // Emit the location of the prototype.
       if (FDecl && !FDecl->getBuiltinID())
-        Diag(FDecl->getLocStart(),
-             diag::note_typecheck_call_too_many_args)
-             << FDecl;
+        Diag(FDecl->getLocStart(), diag::note_callee_decl)
+          << FDecl;
       
       // This deletes the extra arguments.
       Call->setNumArgs(Context, NumArgsInProto);
@@ -8826,11 +8844,14 @@ ExprResult Sema::BuildVAArgExpr(SourceLocation BuiltinLoc,
           << TInfo->getTypeLoc().getSourceRange()))
       return ExprError();
 
-    if (!TInfo->getType().isPODType(Context))
+    if (!TInfo->getType().isPODType(Context)) {
       Diag(TInfo->getTypeLoc().getBeginLoc(),
-          diag::warn_second_parameter_to_va_arg_not_pod)
+           TInfo->getType()->isObjCLifetimeType()
+             ? diag::warn_second_parameter_to_va_arg_ownership_qualified
+             : diag::warn_second_parameter_to_va_arg_not_pod)
         << TInfo->getType()
         << TInfo->getTypeLoc().getSourceRange();
+    }
 
     // Check for va_arg where arguments of the given type will be promoted
     // (i.e. this va_arg is guaranteed to have undefined behavior).

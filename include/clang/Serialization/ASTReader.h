@@ -32,6 +32,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/OwningPtr.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitcode/BitstreamReader.h"
@@ -252,6 +253,9 @@ public:
   /// stored.
   const uint32_t *IdentifierOffsets;
   
+  /// \brief Base identifier ID for identifiers local to this module.
+  serialization::IdentID BaseIdentifierID;
+
   /// \brief Actual data for the on-disk hash table of identifiers.
   ///
   /// This pointer points into a memory buffer, where the on-disk hash
@@ -280,6 +284,10 @@ public:
   /// \brief The offset of the start of the preprocessor detail cursor.
   uint64_t PreprocessorDetailStartOffset;
   
+  /// \brief Base preprocessed entity ID for preprocessed entities local to 
+  /// this module.
+  serialization::PreprocessedEntityID BasePreprocessedEntityID;
+  
   /// \brief The number of macro definitions in this file.
   unsigned LocalNumMacroDefinitions;
   
@@ -287,6 +295,10 @@ public:
   /// record in the AST file.
   const uint32_t *MacroDefinitionOffsets;
   
+  /// \brief Base macro definition ID for macro definitions local to this 
+  /// module.
+  serialization::MacroID BaseMacroDefinitionID;
+
   // === Header search information ===
   
   /// \brief The number of local HeaderFileInfo structures.
@@ -318,6 +330,9 @@ public:
   /// where each selector resides.
   const uint32_t *SelectorOffsets;
   
+  /// \brief Base selector ID for selectors local to this module.
+  serialization::SelectorID BaseSelectorID;
+
   /// \brief A pointer to the character data that comprises the selector table
   ///
   /// The SelectorOffsets table refers into this memory.
@@ -343,14 +358,20 @@ public:
   /// \brief Offset of each declaration within the bitstream, indexed
   /// by the declaration ID (-1).
   const uint32_t *DeclOffsets;
-    
+  
+  /// \brief Base declaration ID for declarations local to this module.
+  serialization::DeclID BaseDeclID;
+
   /// \brief The number of C++ base specifier sets in this AST file.
   unsigned LocalNumCXXBaseSpecifiers;
   
   /// \brief Offset of each C++ base specifier set within the bitstream,
   /// indexed by the C++ base specifier set ID (-1).
   const uint32_t *CXXBaseSpecifiersOffsets;
-  
+
+  /// \brief Base base specifier ID for base specifiers local to this module.
+  serialization::CXXBaseSpecifiersID BaseCXXBaseSpecifiersID;
+
   // === Types ===
   
   /// \brief The number of types in this AST file.
@@ -359,6 +380,9 @@ public:
   /// \brief Offset of each type within the bitstream, indexed by the
   /// type ID, or the representation of a Type*.
   const uint32_t *TypeOffsets;
+  
+  /// \brief Base type ID for types local to this module.
+  serialization::TypeID BaseTypeID;
   
   // === Miscellaneous ===
   
@@ -374,12 +398,11 @@ public:
   /// preprocessing record.
   unsigned NumPreallocatedPreprocessingEntities;
   
-  /// \brief The next module in source order.
-  Module *NextInSource;
+  /// \brief List of modules which depend on this module
+  llvm::SetVector<Module *> ImportedBy;
   
-  /// \brief All the modules that loaded this one. Can contain NULL for
-  /// directly loaded modules.
-  SmallVector<Module *, 1> Loaders;
+  /// \brief List of modules which this module depends on
+  llvm::SetVector<Module *> Imports;
 };
 
 /// \brief The manager for modules loaded by the ASTReader.
@@ -404,19 +427,22 @@ public:
   ModuleManager(const FileSystemOptions &FSO);
   ~ModuleManager();
 
-  /// \brief Forward iterator to traverse all loaded modules
+  /// \brief Forward iterator to traverse all loaded modules.  This is reverse
+  /// source-order.
   ModuleIterator begin() { return Chain.begin(); }
   /// \brief Forward iterator end-point to traverse all loaded modules
   ModuleIterator end() { return Chain.end(); }
 
-  /// \brief Const forward iterator to traverse all loaded modules
+  /// \brief Const forward iterator to traverse all loaded modules.  This is 
+  /// in reverse source-order.
   ModuleConstIterator begin() const { return Chain.begin(); }
   /// \brief Const forward iterator end-point to traverse all loaded modules
   ModuleConstIterator end() const { return Chain.end(); }
 
-  /// \brief Reverse iterator to traverse all loaded modules
+  /// \brief Reverse iterator to traverse all loaded modules.  This is in 
+  /// source order.
   ModuleReverseIterator rbegin() { return Chain.rbegin(); }
-  /// \brief Reverse iterator end-point to traverse all loaded modules
+  /// \brief Reverse iterator end-point to traverse all loaded modules.
   ModuleReverseIterator rend() { return Chain.rend(); }
 
   /// \brief Returns the primary module associated with the manager, that is,
@@ -537,8 +563,7 @@ private:
   /// ID = (I + 1) << FastQual::Width has already been loaded
   std::vector<QualType> TypesLoaded;
 
-  typedef ContinuousRangeMap<serialization::TypeID,
-      std::pair<Module *, int32_t>, 4>
+  typedef ContinuousRangeMap<serialization::TypeID, Module *, 4>
     GlobalTypeMapType;
 
   /// \brief Mapping from global type IDs to the module in which the
@@ -563,13 +588,11 @@ private:
   /// = I + 1 has already been loaded.
   std::vector<Decl *> DeclsLoaded;
 
-  typedef ContinuousRangeMap<serialization::DeclID, 
-                             std::pair<Module *, int32_t>, 4> 
+  typedef ContinuousRangeMap<serialization::DeclID, Module *, 4> 
     GlobalDeclMapType;
   
   /// \brief Mapping from global declaration IDs to the module in which the
-  /// declaration resides along with the offset that should be added to the
-  /// global declaration ID to produce a local ID.
+  /// declaration resides.
   GlobalDeclMapType GlobalDeclMap;
   
   typedef std::pair<Module *, uint64_t> FileOffset;
@@ -644,8 +667,7 @@ private:
   /// been loaded.
   std::vector<IdentifierInfo *> IdentifiersLoaded;
 
-  typedef ContinuousRangeMap<serialization::IdentID, 
-                             std::pair<Module *, int32_t>, 4> 
+  typedef ContinuousRangeMap<serialization::IdentID, Module *, 4> 
     GlobalIdentifierMapType;
   
   /// \brief Mapping from global identifer IDs to the module in which the
@@ -660,8 +682,7 @@ private:
   /// been loaded.
   SmallVector<Selector, 16> SelectorsLoaded;
 
-  typedef ContinuousRangeMap<serialization::SelectorID, 
-                             std::pair<Module *, int32_t>, 4> 
+  typedef ContinuousRangeMap<serialization::SelectorID, Module *, 4> 
     GlobalSelectorMapType;
   
   /// \brief Mapping from global selector IDs to the module in which the
@@ -672,8 +693,7 @@ private:
   /// \brief The macro definitions we have already loaded.
   SmallVector<MacroDefinition *, 16> MacroDefinitionsLoaded;
 
-  typedef ContinuousRangeMap<serialization::MacroID, 
-                             std::pair<Module *, int32_t>, 4> 
+  typedef ContinuousRangeMap<serialization::MacroID, Module *, 4> 
     GlobalMacroDefinitionMapType;
   
   /// \brief Mapping from global macro definition IDs to the module in which the
@@ -686,7 +706,7 @@ private:
   /// record resides.
   llvm::DenseMap<IdentifierInfo *, uint64_t> UnreadMacroRecordOffsets;
 
-  typedef ContinuousRangeMap<unsigned, std::pair<Module *, int>, 4> 
+  typedef ContinuousRangeMap<unsigned, Module *, 4> 
     GlobalPreprocessedEntityMapType;
   
   /// \brief Mapping from global preprocessing entity IDs to the module in
@@ -694,8 +714,7 @@ private:
   /// added to the global preprocessing entitiy ID to produce a local ID.
   GlobalPreprocessedEntityMapType GlobalPreprocessedEntityMap;
   
-  typedef ContinuousRangeMap<serialization::CXXBaseSpecifiersID,
-                             std::pair<Module *, int32_t>, 4>
+  typedef ContinuousRangeMap<serialization::CXXBaseSpecifiersID, Module *, 4>
     GlobalCXXBaseSpecifiersMapType;
 
   /// \brief Mapping from global CXX base specifier IDs to the module in which
@@ -1584,6 +1603,11 @@ public:
   /// position.
   PreprocessedEntity *LoadPreprocessedEntity(Module &F);
       
+  /// \brief Determine the global preprocessed entity ID that corresponds to
+  /// the given local ID within the given module.
+  serialization::PreprocessedEntityID 
+  getGlobalPreprocessedEntityID(Module &M, unsigned LocalID);
+  
   /// \brief Note that the identifier is a macro whose record will be loaded
   /// from the given AST file at the given (file-local) offset.
   void SetIdentifierIsMacro(IdentifierInfo *II, Module &F,
@@ -1603,6 +1627,17 @@ public:
   /// \brief Retrieve the macro definition with the given ID.
   MacroDefinition *getMacroDefinition(serialization::MacroID ID);
 
+  /// \brief Retrieve the global macro definition ID that corresponds to the
+  /// local macro definition ID within a given module.
+  serialization::MacroID getGlobalMacroDefinitionID(Module &M, 
+                                                    unsigned LocalID);
+
+  /// \brief Deserialize a macro definition that is local to the given
+  /// module.
+  MacroDefinition *getLocalMacroDefinition(Module &M, unsigned LocalID) {
+    return getMacroDefinition(getGlobalMacroDefinitionID(M, LocalID));
+  }
+  
   /// \brief Retrieve the AST context that this AST reader supplements.
   ASTContext *getContext() { return Context; }
 

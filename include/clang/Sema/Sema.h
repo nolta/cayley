@@ -1777,6 +1777,12 @@ public:
                                    bool IsProtocolMethodDecl,
                                    bool IsDeclaration = false);
 
+  /// WarnExactTypedMethods - This routine issues a warning if method
+  /// implementation declaration matches exactly that of its declaration.
+  void WarnExactTypedMethods(ObjCMethodDecl *Method,
+                             ObjCMethodDecl *MethodDecl,
+                             bool IsProtocolMethodDecl);
+
   bool isPropertyReadonly(ObjCPropertyDecl *PropertyDecl,
                           ObjCInterfaceDecl *IDecl);
 
@@ -1896,12 +1902,18 @@ public:
                                   ObjCImplDecl* IMPDecl,
                                   ObjCContainerDecl* IDecl,
                                   bool &IncompleteImpl,
-                                  bool ImmediateClass);
+                                  bool ImmediateClass,
+                                  bool WarnExactMatch=false);
 
   /// MatchMethodsInClassAndItsProtocol - Check that any redeclaration of
   /// method in protocol in its qualified class match in their type and
   /// issue warnings otherwise.
   void MatchMethodsInClassAndItsProtocol(const ObjCInterfaceDecl *CDecl);
+
+  /// CheckCategoryVsClassMethodMatches - Checks that methods implemented in
+  /// category matches with those implemented in its primary class and
+  /// warns each time an exact match is found. 
+  void CheckCategoryVsClassMethodMatches(ObjCCategoryImplDecl *CatIMP);
 
 private:
   /// AddMethodToGlobalPool - Add an instance or factory method to the global
@@ -5820,6 +5832,7 @@ public:
   void CodeCompleteCall(Scope *S, Expr *Fn, Expr **Args, unsigned NumArgs);
   void CodeCompleteInitializer(Scope *S, Decl *D);
   void CodeCompleteReturn(Scope *S);
+  void CodeCompleteAfterIf(Scope *S);
   void CodeCompleteAssignmentRHS(Scope *S, Expr *LHS);
   
   void CodeCompleteQualifiedId(Scope *S, CXXScopeSpec &SS,
