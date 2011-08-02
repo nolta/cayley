@@ -13,5 +13,5 @@
 /* Directory with the libstdc++ headers. */
 #define CXX_INCLUDE_ROOT "${CXX_INCLUDE_ROOT}"
 
-/* Directories clang will search for headers */
+/* Directories clang will search for headers. */
 #define C_INCLUDE_DIRS "${C_INCLUDE_DIRS}"

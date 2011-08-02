@@ -34,7 +34,7 @@ namespace clang {
 template <typename Int, typename V, unsigned InitialCapacity>
 class ContinuousRangeMap {
 public:
-  typedef std::pair<const Int, V> value_type;
+  typedef std::pair<Int, V> value_type;
   typedef value_type &reference;
   typedef const value_type &const_reference;
   typedef value_type *pointer;
@@ -89,6 +89,27 @@ public:
 
   reference back() { return Rep.back(); }
   const_reference back() const { return Rep.back(); }
+  
+  /// \brief An object that helps properly build a continuous range map
+  /// from a set of values.
+  class Builder {
+    ContinuousRangeMap &Self;
+    
+    Builder(const Builder&); // DO NOT IMPLEMENT
+    Builder &operator=(const Builder&); // DO NOT IMPLEMENT
+    
+  public:
+    explicit Builder(ContinuousRangeMap &Self) : Self(Self) { }
+    
+    ~Builder() {
+      std::sort(Self.Rep.begin(), Self.Rep.end(), Compare());
+    }
+    
+    void insert(const value_type &Val) {
+      Self.Rep.push_back(Val);
+    }
+  };
+  friend class Builder;
 };
 
 }

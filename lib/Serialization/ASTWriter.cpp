@@ -1580,38 +1580,6 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
   Record.push_back(SourceMgr.getNextLocalOffset() - 1); // skip dummy
   Stream.EmitRecordWithBlob(SLocOffsetsAbbrev, Record, data(SLocEntryOffsets));
 
-  // If we have module dependencies, write the mapping from source locations to
-  // their containing modules, so that the reader can build the remapping.
-  if (Chain) {
-    // The map consists solely of a blob with the following format:
-    // *(offset:i32 len:i16 name:len*i8)
-    // Sorted by offset.
-    typedef std::pair<uint32_t, StringRef> ModuleOffset;
-    SmallVector<ModuleOffset, 16> Modules;
-
-    Chain->ModuleMgr.exportLookup(Modules);
-
-    Abbrev = new BitCodeAbbrev();
-    Abbrev->Add(BitCodeAbbrevOp(SOURCE_LOCATION_MAP));
-    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
-    unsigned SLocMapAbbrev = Stream.EmitAbbrev(Abbrev);
-    llvm::SmallString<2048> Buffer;
-    {
-      llvm::raw_svector_ostream Out(Buffer);
-      for (SmallVector<ModuleOffset, 16>::iterator I = Modules.begin(),
-                                                         E = Modules.end();
-           I != E; ++I) {
-        io::Emit32(Out, I->first);
-        io::Emit16(Out, I->second.size());
-        Out.write(I->second.data(), I->second.size());
-      }
-    }
-    Record.clear();
-    Record.push_back(SOURCE_LOCATION_MAP);
-    Stream.EmitRecordWithBlob(SLocMapAbbrev, Record,
-                              Buffer.data(), Buffer.size());
-  }
-
   Abbrev = new BitCodeAbbrev();
   Abbrev->Add(BitCodeAbbrevOp(FILE_SOURCE_LOCATION_OFFSETS));
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 16)); // # of slocs
@@ -2062,11 +2030,13 @@ void ASTWriter::WriteTypeDeclOffsets() {
   BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
   Abbrev->Add(BitCodeAbbrevOp(TYPE_OFFSET));
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // # of types
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // base type index
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // types block
   unsigned TypeOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
   Record.clear();
   Record.push_back(TYPE_OFFSET);
   Record.push_back(TypeOffsets.size());
+  Record.push_back(FirstTypeID - NUM_PREDEF_TYPE_IDS);
   Stream.EmitRecordWithBlob(TypeOffsetAbbrev, Record, data(TypeOffsets));
 
   // Write the declaration offsets array
@@ -2504,7 +2474,6 @@ public:
     case DeclarationName::CXXConstructorName:
     case DeclarationName::CXXDestructorName:
     case DeclarationName::CXXConversionFunctionName:
-      ID.AddInteger(Writer.GetOrCreateTypeID(Name.getCXXNameType()));
       break;
     case DeclarationName::CXXOperatorName:
       ID.AddInteger(Name.getCXXOverloadedOperator());
@@ -2527,15 +2496,15 @@ public:
     case DeclarationName::ObjCZeroArgSelector:
     case DeclarationName::ObjCOneArgSelector:
     case DeclarationName::ObjCMultiArgSelector:
-    case DeclarationName::CXXConstructorName:
-    case DeclarationName::CXXDestructorName:
-    case DeclarationName::CXXConversionFunctionName:
     case DeclarationName::CXXLiteralOperatorName:
       KeyLen += 4;
       break;
     case DeclarationName::CXXOperatorName:
       KeyLen += 1;
       break;
+    case DeclarationName::CXXConstructorName:
+    case DeclarationName::CXXDestructorName:
+    case DeclarationName::CXXConversionFunctionName:
     case DeclarationName::CXXUsingDirective:
       break;
     }
@@ -2562,11 +2531,6 @@ public:
     case DeclarationName::ObjCMultiArgSelector:
       Emit32(Out, Writer.getSelectorRef(Name.getObjCSelector()));
       break;
-    case DeclarationName::CXXConstructorName:
-    case DeclarationName::CXXDestructorName:
-    case DeclarationName::CXXConversionFunctionName:
-      Emit32(Out, Writer.getTypeID(Name.getCXXNameType()));
-      break;
     case DeclarationName::CXXOperatorName:
       assert(Name.getCXXOverloadedOperator() < 0x100 && "Invalid operator ?");
       Emit8(Out, Name.getCXXOverloadedOperator());
@@ -2574,6 +2538,9 @@ public:
     case DeclarationName::CXXLiteralOperatorName:
       Emit32(Out, Writer.getIdentifierRef(Name.getCXXLiteralIdentifier()));
       break;
+    case DeclarationName::CXXConstructorName:
+    case DeclarationName::CXXDestructorName:
+    case DeclarationName::CXXConversionFunctionName:
     case DeclarationName::CXXUsingDirective:
       break;
     }
@@ -2948,29 +2915,28 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   if (StatCalls && isysroot.empty())
     WriteStatCache(*StatCalls);
   WriteSourceManagerBlock(Context.getSourceManager(), PP, isysroot);
-  // Write the record of special types.
-  Record.clear();
-
-  AddTypeRef(Context.getBuiltinVaListType(), Record);
-  AddTypeRef(Context.getObjCIdType(), Record);
-  AddTypeRef(Context.getObjCSelType(), Record);
-  AddTypeRef(Context.getObjCProtoType(), Record);
-  AddTypeRef(Context.getObjCClassType(), Record);
-  AddTypeRef(Context.getRawCFConstantStringType(), Record);
-  AddTypeRef(Context.getRawObjCFastEnumerationStateType(), Record);
-  AddTypeRef(Context.getFILEType(), Record);
-  AddTypeRef(Context.getjmp_bufType(), Record);
-  AddTypeRef(Context.getsigjmp_bufType(), Record);
-  AddTypeRef(Context.ObjCIdRedefinitionType, Record);
-  AddTypeRef(Context.ObjCClassRedefinitionType, Record);
-  AddTypeRef(Context.getRawBlockdescriptorType(), Record);
-  AddTypeRef(Context.getRawBlockdescriptorExtendedType(), Record);
-  AddTypeRef(Context.ObjCSelRedefinitionType, Record);
-  AddTypeRef(Context.getRawNSConstantStringType(), Record);
-  Record.push_back(Context.isInt128Installed());
-  AddTypeRef(Context.AutoDeductTy, Record);
-  AddTypeRef(Context.AutoRRefDeductTy, Record);
-  Stream.EmitRecord(SPECIAL_TYPES, Record);
+  
+  // Form the record of special types.
+  RecordData SpecialTypes;
+  AddTypeRef(Context.getBuiltinVaListType(), SpecialTypes);
+  AddTypeRef(Context.getObjCIdType(), SpecialTypes);
+  AddTypeRef(Context.getObjCSelType(), SpecialTypes);
+  AddTypeRef(Context.getObjCProtoType(), SpecialTypes);
+  AddTypeRef(Context.getObjCClassType(), SpecialTypes);
+  AddTypeRef(Context.getRawCFConstantStringType(), SpecialTypes);
+  AddTypeRef(Context.getRawObjCFastEnumerationStateType(), SpecialTypes);
+  AddTypeRef(Context.getFILEType(), SpecialTypes);
+  AddTypeRef(Context.getjmp_bufType(), SpecialTypes);
+  AddTypeRef(Context.getsigjmp_bufType(), SpecialTypes);
+  AddTypeRef(Context.ObjCIdRedefinitionType, SpecialTypes);
+  AddTypeRef(Context.ObjCClassRedefinitionType, SpecialTypes);
+  AddTypeRef(Context.getRawBlockdescriptorType(), SpecialTypes);
+  AddTypeRef(Context.getRawBlockdescriptorExtendedType(), SpecialTypes);
+  AddTypeRef(Context.ObjCSelRedefinitionType, SpecialTypes);
+  AddTypeRef(Context.getRawNSConstantStringType(), SpecialTypes);
+  SpecialTypes.push_back(Context.isInt128Installed());
+  AddTypeRef(Context.AutoDeductTy, SpecialTypes);
+  AddTypeRef(Context.AutoRRefDeductTy, SpecialTypes);
 
   // Keep writing types and declarations until all types and
   // declarations have been written.
@@ -2999,6 +2965,8 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
 
   WriteCXXBaseSpecifiersOffsets();
   
+  Stream.EmitRecord(SPECIAL_TYPES, SpecialTypes);
+
   // Write the record containing external, unnamed definitions.
   if (!ExternalDefinitions.empty())
     Stream.EmitRecord(EXTERNAL_DEFINITIONS, ExternalDefinitions);
@@ -3079,6 +3047,48 @@ void ASTWriter::WriteASTChain(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   // done by tracking the largest ID in the chain
   WriteSourceManagerBlock(Context.getSourceManager(), PP, isysroot);
 
+  // Write the mapping information describing our module dependencies and how
+  // each of those modules were mapped into our own offset/ID space, so that
+  // the reader can build the appropriate mapping to its own offset/ID space.
+  // The map consists solely of a blob with the following format:
+  // *(module-name-len:i16 module-name:len*i8
+  //   source-location-offset:i32
+  //   identifier-id:i32
+  //   preprocessed-entity-id:i32
+  //   macro-definition-id:i32
+  //   selector-id:i32
+  //   declaration-id:i32
+  //   c++-base-specifiers-id:i32
+  //   type-id:i32)
+  // 
+  llvm::BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
+  Abbrev->Add(BitCodeAbbrevOp(MODULE_OFFSET_MAP));
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
+  unsigned ModuleOffsetMapAbbrev = Stream.EmitAbbrev(Abbrev);
+  llvm::SmallString<2048> Buffer;
+  {
+    llvm::raw_svector_ostream Out(Buffer);
+    for (ModuleManager::ModuleConstIterator M = Chain->ModuleMgr.begin(),
+                                         MEnd = Chain->ModuleMgr.end();
+         M != MEnd; ++M) {
+      StringRef FileName = (*M)->FileName;
+      io::Emit16(Out, FileName.size());
+      Out.write(FileName.data(), FileName.size());
+      io::Emit32(Out, (*M)->SLocEntryBaseOffset);
+      io::Emit32(Out, (*M)->BaseIdentifierID);
+      io::Emit32(Out, (*M)->BasePreprocessedEntityID);
+      io::Emit32(Out, (*M)->BaseMacroDefinitionID);
+      io::Emit32(Out, (*M)->BaseSelectorID);
+      io::Emit32(Out, (*M)->BaseDeclID);
+      io::Emit32(Out, (*M)->BaseCXXBaseSpecifiersID);
+      io::Emit32(Out, (*M)->BaseTypeIndex);
+    }
+  }
+  Record.clear();
+  Record.push_back(MODULE_OFFSET_MAP);
+  Stream.EmitRecordWithBlob(ModuleOffsetMapAbbrev, Record,
+                            Buffer.data(), Buffer.size());
+  
   // The special types are in the chained PCH.
 
   // We don't start with the translation unit, but with its decls that
