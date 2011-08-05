@@ -650,19 +650,19 @@ public:
                            const unsigned char* d,
                            unsigned DataLen) {
     using namespace clang::io;
-    IdentID ID = Reader.getGlobalSelectorID(F, ReadUnalignedLE32(d));
-    bool IsInteresting = ID & 0x01;
+    unsigned RawID = ReadUnalignedLE32(d);
+    bool IsInteresting = RawID & 0x01;
 
     // Wipe out the "is interesting" bit.
-    ID = ID >> 1;
+    RawID = RawID >> 1;
 
+    IdentID ID = Reader.getGlobalIdentifierID(F, RawID);
     if (!IsInteresting) {
       // For uninteresting identifiers, just build the IdentifierInfo
       // and associate it with the persistent ID.
       IdentifierInfo *II = KnownII;
       if (!II)
-        II = &Reader.getIdentifierTable().getOwn(StringRef(k.first,
-                                                                 k.second));
+        II = &Reader.getIdentifierTable().getOwn(StringRef(k.first, k.second));
       Reader.SetIdentifierInfo(ID, II);
       II->setIsFromAST();
       return II;
@@ -689,8 +689,7 @@ public:
     // the new IdentifierInfo.
     IdentifierInfo *II = KnownII;
     if (!II)
-      II = &Reader.getIdentifierTable().getOwn(StringRef(k.first,
-                                                               k.second));
+      II = &Reader.getIdentifierTable().getOwn(StringRef(k.first, k.second));
     Reader.SetIdentifierInfo(ID, II);
 
     // Set or check the various bits in the IdentifierInfo structure.
@@ -1415,7 +1414,7 @@ bool ASTReader::ReadBlockAbbrevs(llvm::BitstreamCursor &Cursor,
   }
 }
 
-PreprocessedEntity *ASTReader::ReadMacroRecord(Module &F, uint64_t Offset) {
+void ASTReader::ReadMacroRecord(Module &F, uint64_t Offset) {
   assert(PP && "Forgot to set Preprocessor ?");
   llvm::BitstreamCursor &Stream = F.MacroCursor;
 
@@ -1432,14 +1431,14 @@ PreprocessedEntity *ASTReader::ReadMacroRecord(Module &F, uint64_t Offset) {
     unsigned Code = Stream.ReadCode();
     switch (Code) {
     case llvm::bitc::END_BLOCK:
-      return 0;
+      return;
 
     case llvm::bitc::ENTER_SUBBLOCK:
       // No known subblocks, always skip them.
       Stream.ReadSubBlockID();
       if (Stream.SkipBlock()) {
         Error("malformed block record in AST file");
-        return 0;
+        return;
       }
       continue;
 
@@ -1463,12 +1462,12 @@ PreprocessedEntity *ASTReader::ReadMacroRecord(Module &F, uint64_t Offset) {
       // of the definition of the macro we were looking for. We're
       // done.
       if (Macro)
-        return 0;
+        return;
 
       IdentifierInfo *II = getLocalIdentifier(F, Record[0]);
       if (II == 0) {
         Error("macro must have a name in AST file");
-        return 0;
+        return;
       }
       SourceLocation Loc = ReadSourceLocation(F, Record[1]);
       bool isUsed = Record[2];
@@ -1532,7 +1531,7 @@ PreprocessedEntity *ASTReader::ReadMacroRecord(Module &F, uint64_t Offset) {
   }
   }
   
-  return 0;
+  return;
 }
 
 PreprocessedEntity *ASTReader::LoadPreprocessedEntity(Module &F) {
@@ -1570,7 +1569,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(Module &F) {
   switch (RecType) {
   case PPD_MACRO_EXPANSION: {
     PreprocessedEntityID GlobalID = getGlobalPreprocessedEntityID(F, Record[0]);
-    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(GlobalID))
+    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(GlobalID-1))
       return PE;
     
     MacroExpansion *ME =
@@ -1578,13 +1577,13 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(Module &F) {
                                  SourceRange(ReadSourceLocation(F, Record[1]),
                                              ReadSourceLocation(F, Record[2])),
                                  getLocalMacroDefinition(F, Record[4]));
-    PPRec.setLoadedPreallocatedEntity(GlobalID, ME);
+    PPRec.setLoadedPreallocatedEntity(GlobalID - 1, ME);
     return ME;
   }
       
   case PPD_MACRO_DEFINITION: {
     PreprocessedEntityID GlobalID = getGlobalPreprocessedEntityID(F, Record[0]);
-    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(GlobalID))
+    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(GlobalID-1))
       return PE;
 
     unsigned MacroDefID = getGlobalMacroDefinitionID(F, Record[1]);
@@ -1604,7 +1603,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(Module &F) {
                                             ReadSourceLocation(F, Record[2]),
                                             ReadSourceLocation(F, Record[3])));
       
-      PPRec.setLoadedPreallocatedEntity(GlobalID, MD);
+      PPRec.setLoadedPreallocatedEntity(GlobalID - 1, MD);
       MacroDefinitionsLoaded[MacroDefID - 1] = MD;
       
       if (DeserializationListener)
@@ -1616,7 +1615,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(Module &F) {
       
   case PPD_INCLUSION_DIRECTIVE: {
     PreprocessedEntityID GlobalID = getGlobalPreprocessedEntityID(F, Record[0]);
-    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(GlobalID))
+    if (PreprocessedEntity *PE = PPRec.getLoadedPreprocessedEntity(GlobalID-1))
       return PE;
     
     const char *FullFileNameStart = BlobStart + Record[3];
@@ -1634,7 +1633,7 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(Module &F) {
                                        File,
                                  SourceRange(ReadSourceLocation(F, Record[1]),
                                              ReadSourceLocation(F, Record[2])));
-    PPRec.setLoadedPreallocatedEntity(GlobalID, ID);
+    PPRec.setLoadedPreallocatedEntity(GlobalID - 1, ID);
     return ID;
   }
   }
@@ -1645,8 +1644,12 @@ PreprocessedEntity *ASTReader::LoadPreprocessedEntity(Module &F) {
 
 PreprocessedEntityID 
 ASTReader::getGlobalPreprocessedEntityID(Module &M, unsigned LocalID) {
-  // FIXME: Local-to-global mapping
-  return LocalID;
+  ContinuousRangeMap<uint32_t, int, 2>::iterator 
+    I = M.PreprocessedEntityRemap.find(LocalID - NUM_PREDEF_PP_ENTITY_IDS);
+  assert(I != M.PreprocessedEntityRemap.end() 
+         && "Invalid index into preprocessed entity index remap");
+  
+  return LocalID + I->second;
 }
 
 namespace {
@@ -1877,8 +1880,15 @@ const FileEntry *ASTReader::getFileEntry(StringRef filenameStrRef) {
 }
 
 MacroID ASTReader::getGlobalMacroDefinitionID(Module &M, unsigned LocalID) {
-  // FIXME: Local-to-global mapping
-  return LocalID;
+  if (LocalID < NUM_PREDEF_MACRO_IDS)
+    return LocalID;
+  
+  ContinuousRangeMap<uint32_t, int, 2>::iterator I
+    = M.MacroDefinitionRemap.find(LocalID - NUM_PREDEF_MACRO_IDS);
+  assert(I != M.MacroDefinitionRemap.end() && 
+         "Invalid index into macro definition ID remap");
+  
+  return LocalID + I->second;
 }
 
 /// \brief If we are loading a relocatable PCH file, and the filename is
@@ -2069,21 +2079,31 @@ ASTReader::ReadASTBlock(Module &F) {
       break;
     }
         
-    case DECL_OFFSET:
+    case DECL_OFFSET: {
       if (F.LocalNumDecls != 0) {
         Error("duplicate DECL_OFFSET record in AST file");
         return Failure;
       }
       F.DeclOffsets = (const uint32_t *)BlobStart;
       F.LocalNumDecls = Record[0];
+      unsigned LocalBaseDeclID = Record[1];
       F.BaseDeclID = getTotalNumDecls();
         
-      // Introduce the global -> local mapping for declarations within this 
-      // AST file.
-      GlobalDeclMap.insert(std::make_pair(getTotalNumDecls() + 1, &F));
-      DeclsLoaded.resize(DeclsLoaded.size() + F.LocalNumDecls);      
+      if (F.LocalNumDecls > 0) {
+        // Introduce the global -> local mapping for declarations within this 
+        // module.
+        GlobalDeclMap.insert(std::make_pair(getTotalNumDecls() + 1, &F));
+        
+        // Introduce the local -> global mapping for declarations within this
+        // module.
+        F.DeclRemap.insert(std::make_pair(LocalBaseDeclID, 
+                                          F.BaseDeclID - LocalBaseDeclID));
+        
+        DeclsLoaded.resize(DeclsLoaded.size() + F.LocalNumDecls);
+      }
       break;
-
+    }
+        
     case TU_UPDATE_LEXICAL: {
       DeclContextInfo Info = {
         &F,
@@ -2097,28 +2117,28 @@ ASTReader::ReadASTBlock(Module &F) {
     }
 
     case UPDATE_VISIBLE: {
-      serialization::DeclID ID = Record[0];
+      unsigned Idx = 0;
+      serialization::DeclID ID = ReadDeclID(F, Record, Idx);
       void *Table = ASTDeclContextNameLookupTable::Create(
-                        (const unsigned char *)BlobStart + Record[1],
+                        (const unsigned char *)BlobStart + Record[Idx++],
                         (const unsigned char *)BlobStart,
                         ASTDeclContextNameLookupTrait(*this, F));
-      if (ID == 1 && Context) { // Is it the TU?
+      // FIXME: Complete hack to check for the TU
+      if (ID == (*(ModuleMgr.end() - 1))->BaseDeclID + 1 && Context) { // Is it the TU?
         DeclContextInfo Info = {
-          &F, Table, /* No lexical inforamtion */ 0, 0
+          &F, Table, /* No lexical information */ 0, 0
         };
         DeclContextOffsets[Context->getTranslationUnitDecl()].push_back(Info);
       } else
-        PendingVisibleUpdates[ID].push_back(Table);
+        PendingVisibleUpdates[ID].push_back(std::make_pair(Table, &F));
       break;
     }
 
     case REDECLS_UPDATE_LATEST: {
       assert(Record.size() % 2 == 0 && "Expected pairs of DeclIDs");
-      for (unsigned i = 0, e = Record.size(); i < e; i += 2) {
-        DeclID First = Record[i], Latest = Record[i+1];
-        assert((FirstLatestDeclIDs.find(First) == FirstLatestDeclIDs.end() ||
-                Latest > FirstLatestDeclIDs[First]) &&
-               "The new latest is supposed to come after the previous latest");
+      for (unsigned i = 0, e = Record.size(); i < e; /* in loop */) {
+        DeclID First = ReadDeclID(F, Record, i);
+        DeclID Latest = ReadDeclID(F, Record, i);
         FirstLatestDeclIDs[First] = Latest;
       }
       break;
@@ -2144,22 +2164,34 @@ ASTReader::ReadASTBlock(Module &F) {
       }
       break;
 
-    case IDENTIFIER_OFFSET:
+    case IDENTIFIER_OFFSET: {
       if (F.LocalNumIdentifiers != 0) {
         Error("duplicate IDENTIFIER_OFFSET record in AST file");
         return Failure;
       }
       F.IdentifierOffsets = (const uint32_t *)BlobStart;
       F.LocalNumIdentifiers = Record[0];
+      unsigned LocalBaseIdentifierID = Record[1];
       F.BaseIdentifierID = getTotalNumIdentifiers();
         
-      // Introduce the global -> local mapping for identifiers within this AST
-      // file
-      GlobalIdentifierMap.insert(std::make_pair(getTotalNumIdentifiers() + 1, 
-                                                &F));
-      IdentifiersLoaded.resize(IdentifiersLoaded.size() +F.LocalNumIdentifiers);
+      if (F.LocalNumIdentifiers > 0) {
+        // Introduce the global -> local mapping for identifiers within this
+        // module.
+        GlobalIdentifierMap.insert(std::make_pair(getTotalNumIdentifiers() + 1, 
+                                                  &F));
+        
+        // Introduce the local -> global mapping for identifiers within this
+        // module.
+        F.IdentifierRemap.insert(
+                            std::make_pair(LocalBaseIdentifierID,
+                              F.BaseIdentifierID - LocalBaseIdentifierID));
+        
+        IdentifiersLoaded.resize(IdentifiersLoaded.size() 
+                                 + F.LocalNumIdentifiers);
+      }
       break;
-
+    }
+        
     case EXTERNAL_DEFINITIONS:
       for (unsigned I = 0, N = Record.size(); I != N; ++I)
         ExternalDefinitions.push_back(getGlobalDeclID(F, Record[I]));
@@ -2214,17 +2246,27 @@ ASTReader::ReadASTBlock(Module &F) {
         LocallyScopedExternalDecls.push_back(getGlobalDeclID(F, Record[I]));
       break;
 
-    case SELECTOR_OFFSETS:
+    case SELECTOR_OFFSETS: {
       F.SelectorOffsets = (const uint32_t *)BlobStart;
       F.LocalNumSelectors = Record[0];
+      unsigned LocalBaseSelectorID = Record[1];
       F.BaseSelectorID = getTotalNumSelectors();
         
-      // Introduce the global -> local mapping for identifiers within this AST
-      // file
-      GlobalSelectorMap.insert(std::make_pair(getTotalNumSelectors() + 1, &F));
-      SelectorsLoaded.resize(SelectorsLoaded.size() + F.LocalNumSelectors);        
-      break;
+      if (F.LocalNumSelectors > 0) {
+        // Introduce the global -> local mapping for selectors within this 
+        // module.
+        GlobalSelectorMap.insert(std::make_pair(getTotalNumSelectors()+1, &F));
+        
+        // Introduce the local -> global mapping for selectors within this 
+        // module.
+        F.SelectorRemap.insert(std::make_pair(LocalBaseSelectorID,
+                                 F.BaseSelectorID - LocalBaseSelectorID));
 
+        SelectorsLoaded.resize(SelectorsLoaded.size() + F.LocalNumSelectors);        
+      }
+      break;
+    }
+        
     case METHOD_POOL:
       F.SelectorLookupTableData = (const unsigned char *)BlobStart;
       if (Record[0])
@@ -2283,6 +2325,15 @@ ASTReader::ReadASTBlock(Module &F) {
       
       // Continuous range maps we may be updating in our module.
       ContinuousRangeMap<uint32_t, int, 2>::Builder SLocRemap(F.SLocRemap);
+      ContinuousRangeMap<uint32_t, int, 2>::Builder 
+        IdentifierRemap(F.IdentifierRemap);
+      ContinuousRangeMap<uint32_t, int, 2>::Builder 
+        PreprocessedEntityRemap(F.PreprocessedEntityRemap);
+      ContinuousRangeMap<uint32_t, int, 2>::Builder 
+        MacroDefinitionRemap(F.MacroDefinitionRemap);
+      ContinuousRangeMap<uint32_t, int, 2>::Builder 
+        SelectorRemap(F.SelectorRemap);
+      ContinuousRangeMap<uint32_t, int, 2>::Builder DeclRemap(F.DeclRemap);
       ContinuousRangeMap<uint32_t, int, 2>::Builder TypeRemap(F.TypeRemap);
 
       while(Data < DataEnd) {
@@ -2301,20 +2352,24 @@ ASTReader::ReadASTBlock(Module &F) {
         uint32_t MacroDefinitionIDOffset = io::ReadUnalignedLE32(Data);
         uint32_t SelectorIDOffset = io::ReadUnalignedLE32(Data);
         uint32_t DeclIDOffset = io::ReadUnalignedLE32(Data);
-        uint32_t CXXBaseSpecifiersIDOffset = io::ReadUnalignedLE32(Data);
         uint32_t TypeIndexOffset = io::ReadUnalignedLE32(Data);
         
         // Source location offset is mapped to OM->SLocEntryBaseOffset.
         SLocRemap.insert(std::make_pair(SLocOffset,
           static_cast<int>(OM->SLocEntryBaseOffset - SLocOffset)));
-        
-        // FIXME: Map other locations
-        (void)IdentifierIDOffset;
-        (void)PreprocessedEntityIDOffset;
-        (void)MacroDefinitionIDOffset;
-        (void)SelectorIDOffset;
-        (void)DeclIDOffset;
-        (void)CXXBaseSpecifiersIDOffset;
+        IdentifierRemap.insert(
+          std::make_pair(IdentifierIDOffset, 
+                         OM->BaseIdentifierID - IdentifierIDOffset));
+        PreprocessedEntityRemap.insert(
+          std::make_pair(PreprocessedEntityIDOffset, 
+            OM->BasePreprocessedEntityID - PreprocessedEntityIDOffset));
+        MacroDefinitionRemap.insert(
+          std::make_pair(MacroDefinitionIDOffset,
+                         OM->BaseMacroDefinitionID - MacroDefinitionIDOffset));
+        SelectorRemap.insert(std::make_pair(SelectorIDOffset, 
+                               OM->BaseSelectorID - SelectorIDOffset));
+        DeclRemap.insert(std::make_pair(DeclIDOffset, 
+                                        OM->BaseDeclID - DeclIDOffset));
         
         TypeRemap.insert(std::make_pair(TypeIndexOffset, 
                                     OM->BaseTypeIndex - TypeIndexOffset));
@@ -2437,10 +2492,10 @@ ASTReader::ReadASTBlock(Module &F) {
     case MACRO_DEFINITION_OFFSETS: {
       F.MacroDefinitionOffsets = (const uint32_t *)BlobStart;
       F.NumPreallocatedPreprocessingEntities = Record[0];
-      F.LocalNumMacroDefinitions = Record[1];
-
-      // Introduce the global -> local mapping for preprocessed entities within 
-      // this AST file.
+      unsigned LocalBasePreprocessedEntityID = Record[1];
+      F.LocalNumMacroDefinitions = Record[2];
+      unsigned LocalBaseMacroID = Record[3];
+      
       unsigned StartingID;
       if (PP) {
         if (!PP->getPreprocessingRecord())
@@ -2453,19 +2508,41 @@ ASTReader::ReadASTBlock(Module &F) {
       } else {
         // FIXME: We'll eventually want to kill this path, since it assumes
         // a particular allocation strategy in the preprocessing record.
-        StartingID = getTotalNumPreprocessedEntities();
+        StartingID = getTotalNumPreprocessedEntities() 
+                   - F.NumPreallocatedPreprocessingEntities;
       }
-      
       F.BaseMacroDefinitionID = getTotalNumMacroDefinitions();
       F.BasePreprocessedEntityID = StartingID;
 
-      // Introduce the global -> local mapping for macro definitions within 
-      // this AST file.
-      GlobalPreprocessedEntityMap.insert(std::make_pair(StartingID, &F));
-      GlobalMacroDefinitionMap.insert(
-        std::make_pair(getTotalNumMacroDefinitions() + 1, &F));
-      MacroDefinitionsLoaded.resize(
+      if (F.NumPreallocatedPreprocessingEntities > 0) {
+        // Introduce the global -> local mapping for preprocessed entities in
+        // this module.
+        GlobalPreprocessedEntityMap.insert(std::make_pair(StartingID, &F));
+       
+        // Introduce the local -> global mapping for preprocessed entities in
+        // this module.
+        F.PreprocessedEntityRemap.insert(
+          std::make_pair(LocalBasePreprocessedEntityID,
+            F.BasePreprocessedEntityID - LocalBasePreprocessedEntityID));
+      }
+      
+
+      if (F.LocalNumMacroDefinitions > 0) {
+        // Introduce the global -> local mapping for macro definitions within 
+        // this module.
+        GlobalMacroDefinitionMap.insert(
+          std::make_pair(getTotalNumMacroDefinitions() + 1, &F));
+        
+        // Introduce the local -> global mapping for macro definitions within
+        // this module.
+        F.MacroDefinitionRemap.insert(
+          std::make_pair(LocalBaseMacroID,
+                         F.BaseMacroDefinitionID - LocalBaseMacroID));
+        
+        MacroDefinitionsLoaded.resize(
                     MacroDefinitionsLoaded.size() + F.LocalNumMacroDefinitions);
+      }
+      
       break;
     }
         
@@ -2475,8 +2552,8 @@ ASTReader::ReadASTBlock(Module &F) {
         return Failure;
       }
       for (unsigned I = 0, N = Record.size(); I != N; I += 2)
-        DeclUpdateOffsets[static_cast<DeclID>(Record[I])]
-            .push_back(std::make_pair(&F, Record[I+1]));
+        DeclUpdateOffsets[getGlobalDeclID(F, Record[I])]
+          .push_back(std::make_pair(&F, Record[I+1]));
       break;
     }
 
@@ -2486,8 +2563,8 @@ ASTReader::ReadASTBlock(Module &F) {
         return Failure;
       }
       for (unsigned I = 0, N = Record.size(); I != N; I += 2)
-        ReplacedDecls[static_cast<DeclID>(Record[I])] =
-            std::make_pair(&F, Record[I+1]);
+        ReplacedDecls[getGlobalDeclID(F, Record[I])]
+          = std::make_pair(&F, Record[I+1]);
       break;
     }
         
@@ -2499,10 +2576,6 @@ ASTReader::ReadASTBlock(Module &F) {
       
       F.LocalNumCXXBaseSpecifiers = Record[0];
       F.CXXBaseSpecifiersOffsets = (const uint32_t *)BlobStart;
-      F.BaseCXXBaseSpecifiersID = getTotalNumCXXBaseSpecifiers();
-      GlobalCXXBaseSpecifiersMap.insert(
-        std::make_pair(getTotalNumCXXBaseSpecifiers() + 1, &F));
-
       NumCXXBaseSpecifiersLoaded += F.LocalNumCXXBaseSpecifiers;
       break;
     }
@@ -2925,7 +2998,7 @@ void ASTReader::InitializeContext(ASTContext &Ctx) {
   if (unsigned Jmp_buf = SpecialTypes[SPECIAL_TYPE_jmp_buf]) {
     QualType Jmp_bufType = GetType(Jmp_buf);
     if (Jmp_bufType.isNull()) {
-      Error("jmp_bug type is NULL");
+      Error("jmp_buf type is NULL");
       return;
     }
     if (const TypedefType *Typedef = Jmp_bufType->getAs<TypedefType>())
@@ -3154,6 +3227,7 @@ bool ASTReader::ParseLanguageOptions(
     PARSE_LANGOPT(SpellChecking);
     PARSE_LANGOPT(MRTD);
     PARSE_LANGOPT(ObjCAutoRefCount);
+    PARSE_LANGOPT(ObjCInferRelatedReturnType);
   #undef PARSE_LANGOPT
 
     return Listener->ReadLanguageOptions(LangOpts);
@@ -4065,20 +4139,13 @@ Decl *ASTReader::GetExternalDecl(uint32_t ID) {
   return GetDecl(ID);
 }
 
-uint64_t 
-ASTReader::GetCXXBaseSpecifiersOffset(serialization::CXXBaseSpecifiersID ID) {
-  if (ID == 0)
+uint64_t ASTReader::readCXXBaseSpecifiers(Module &M, const RecordData &Record, 
+                                          unsigned &Idx){
+  if (Idx >= Record.size())
     return 0;
-
-  GlobalCXXBaseSpecifiersMapType::iterator I =
-      GlobalCXXBaseSpecifiersMap.find(ID);
-
-  assert (I != GlobalCXXBaseSpecifiersMap.end() &&
-                                    "Corrupted global CXX base specifiers map");
   
-  Module *M = I->second;
-  return M->CXXBaseSpecifiersOffsets[ID - 1 - M->BaseCXXBaseSpecifiersID] +
-    M->GlobalBitOffset;
+  unsigned LocalID = Record[Idx++];
+  return getGlobalBitOffset(M, M.CXXBaseSpecifiersOffsets[LocalID - 1]);
 }
 
 CXXBaseSpecifier *ASTReader::GetExternalCXXBaseSpecifiers(uint64_t Offset) {
@@ -4105,33 +4172,50 @@ CXXBaseSpecifier *ASTReader::GetExternalCXXBaseSpecifiers(uint64_t Offset) {
 }
 
 TranslationUnitDecl *ASTReader::GetTranslationUnitDecl() {
-  if (!DeclsLoaded[0]) {
-    ReadDeclRecord(0, 1);
+  // FIXME: This routine might not even make sense when we're loading multiple
+  // unrelated AST files, since we'll have to merge the translation units
+  // somehow.
+  unsigned TranslationUnitID = (*(ModuleMgr.end() - 1))->BaseDeclID + 1;
+  if (!DeclsLoaded[TranslationUnitID - 1]) {
+    ReadDeclRecord(TranslationUnitID);
     if (DeserializationListener)
-      DeserializationListener->DeclRead(1, DeclsLoaded[0]);
+      DeserializationListener->DeclRead(TranslationUnitID, 
+                                        DeclsLoaded[TranslationUnitID - 1]);
   }
 
-  return cast<TranslationUnitDecl>(DeclsLoaded[0]);
+  return cast<TranslationUnitDecl>(DeclsLoaded[TranslationUnitID - 1]);
 }
 
 serialization::DeclID 
 ASTReader::getGlobalDeclID(Module &F, unsigned LocalID) const {
-  // FIXME: Perform local -> global remapping for declarations.
-  return LocalID;
+  if (LocalID < NUM_PREDEF_DECL_IDS)
+    return LocalID;
+
+  ContinuousRangeMap<uint32_t, int, 2>::iterator I
+    = F.DeclRemap.find(LocalID - NUM_PREDEF_DECL_IDS);
+  assert(I != F.DeclRemap.end() && "Invalid index into decl index remap");
+  
+  return LocalID + I->second;
 }
 
 Decl *ASTReader::GetDecl(DeclID ID) {
-  if (ID == 0)
+  if (ID < NUM_PREDEF_DECL_IDS) {    
+    switch ((PredefinedDeclIDs)ID) {
+    case serialization::PREDEF_DECL_NULL_ID:
+      return 0;
+    }
+    
     return 0;
-
+  }
+  
   if (ID > DeclsLoaded.size()) {
     Error("declaration ID out-of-range for AST file");
     return 0;
   }
 
-  unsigned Index = ID - 1;
+  unsigned Index = ID - NUM_PREDEF_DECL_IDS;
   if (!DeclsLoaded[Index]) {
-    ReadDeclRecord(Index, ID);
+    ReadDeclRecord(ID);
     if (DeserializationListener)
       DeserializationListener->DeclRead(ID, DeclsLoaded[Index]);
   }
@@ -4395,7 +4479,6 @@ void ASTReader::dump() {
   dumpModuleIDMap("Global source location entry map", GlobalSLocEntryMap);
   dumpModuleIDMap("Global type map", GlobalTypeMap);
   dumpModuleIDMap("Global declaration map", GlobalDeclMap);
-  dumpModuleIDMap("Global C++ base specifiers map", GlobalCXXBaseSpecifiersMap);
   dumpModuleIDMap("Global identifier map", GlobalIdentifierMap);
   dumpModuleIDMap("Global selector map", GlobalSelectorMap);
   dumpModuleIDMap("Global macro definition map", GlobalMacroDefinitionMap);
@@ -4809,8 +4892,15 @@ IdentifierInfo *ASTReader::getLocalIdentifier(Module &M, unsigned LocalID) {
 }
 
 IdentifierID ASTReader::getGlobalIdentifierID(Module &M, unsigned LocalID) {
-  // FIXME: Perform local-to-global remapping
-  return LocalID;
+  if (LocalID < NUM_PREDEF_IDENT_IDS)
+    return LocalID;
+  
+  ContinuousRangeMap<uint32_t, int, 2>::iterator I
+    = M.IdentifierRemap.find(LocalID - NUM_PREDEF_IDENT_IDS);
+  assert(I != M.IdentifierRemap.end() 
+         && "Invalid index into identifier index remap");
+  
+  return LocalID + I->second;
 }
 
 bool ASTReader::ReadSLocEntry(int ID) {
@@ -4836,7 +4926,7 @@ Selector ASTReader::DecodeSelector(serialization::SelectorID ID) {
     assert(I != GlobalSelectorMap.end() && "Corrupted global selector map");
     Module &M = *I->second;
     ASTSelectorLookupTrait Trait(*this, M);
-    unsigned Idx = ID - 1 - M.BaseSelectorID;
+    unsigned Idx = ID - M.BaseSelectorID - NUM_PREDEF_SELECTOR_IDS;
     SelectorsLoaded[ID - 1] =
       Trait.ReadKey(M.SelectorLookupTableData + M.SelectorOffsets[Idx], 0);
     if (DeserializationListener)
@@ -4855,10 +4945,17 @@ uint32_t ASTReader::GetNumExternalSelectors() {
   return getTotalNumSelectors() + 1;
 }
 
-serialization::SelectorID 
-ASTReader::getGlobalSelectorID(Module &F, unsigned LocalID) const {
-  // FIXME: Perform local -> global remapping
-  return LocalID;
+serialization::SelectorID
+ASTReader::getGlobalSelectorID(Module &M, unsigned LocalID) const {
+  if (LocalID < NUM_PREDEF_SELECTOR_IDS)
+    return LocalID;
+  
+  ContinuousRangeMap<uint32_t, int, 2>::iterator I
+    = M.SelectorRemap.find(LocalID - NUM_PREDEF_SELECTOR_IDS);
+  assert(I != M.SelectorRemap.end() 
+         && "Invalid index into identifier index remap");
+  
+  return LocalID + I->second;
 }
 
 DeclarationName
@@ -5480,7 +5577,7 @@ ASTReader::~ASTReader() {
     for (DeclContextVisibleUpdates::iterator J = I->second.begin(),
                                              F = I->second.end();
          J != F; ++J)
-      delete static_cast<ASTDeclContextNameLookupTable*>(*J);
+      delete static_cast<ASTDeclContextNameLookupTable*>(J->first);
   }
 }
 
@@ -5498,7 +5595,6 @@ Module::Module(ModuleKind Kind)
     SelectorLookupTableData(0), SelectorLookupTable(0), LocalNumDecls(0),
     DeclOffsets(0), BaseDeclID(0),
     LocalNumCXXBaseSpecifiers(0), CXXBaseSpecifiersOffsets(0),
-    BaseCXXBaseSpecifiersID(0),
     LocalNumTypes(0), TypeOffsets(0), BaseTypeIndex(0), StatCache(0),
     NumPreallocatedPreprocessingEntities(0)
 {}
@@ -5540,10 +5636,37 @@ void Module::dump() {
   // Remapping tables.
   llvm::errs() << "  Base source location offset: " << SLocEntryBaseOffset 
                << '\n';
-  dumpLocalRemap("Source location offset map", SLocRemap);
-  llvm::errs() << "  Base type ID: " << BaseTypeIndex << '\n'
+  dumpLocalRemap("Source location offset local -> global map", SLocRemap);
+  
+  llvm::errs() << "  Base identifier ID: " << BaseIdentifierID << '\n'
+               << "  Number of identifiers: " << LocalNumIdentifiers << '\n';
+  dumpLocalRemap("Identifier ID local -> global map", IdentifierRemap);
+  
+  llvm::errs() << "  Base selector ID: " << BaseSelectorID << '\n'
+               << "  Number of selectors: " << LocalNumSelectors << '\n';
+  dumpLocalRemap("Selector ID local -> global map", SelectorRemap);
+  
+  llvm::errs() << "  Base preprocessed entity ID: " << BasePreprocessedEntityID
+               << '\n'  
+               << "Number of preprocessed entities: " 
+               << NumPreallocatedPreprocessingEntities << '\n';
+  dumpLocalRemap("Preprocessed entity ID local -> global map", 
+                 PreprocessedEntityRemap);
+  
+  llvm::errs() << "  Base macro definition ID: " << BaseMacroDefinitionID 
+               << '\n'
+               << "  Number of macro definitions: " << LocalNumMacroDefinitions
+               << '\n';
+  dumpLocalRemap("Macro definition ID local -> global map", 
+                 MacroDefinitionRemap);
+
+  llvm::errs() << "  Base type index: " << BaseTypeIndex << '\n'
                << "  Number of types: " << LocalNumTypes << '\n';
-  dumpLocalRemap("Type ID map", TypeRemap);
+  dumpLocalRemap("Type index local -> global map", TypeRemap);
+    
+  llvm::errs() << "  Base decl ID: " << BaseDeclID << '\n'
+               << "  Number of decls: " << LocalNumDecls << '\n';
+  dumpLocalRemap("Decl ID local -> global map", DeclRemap);
 }
 
 Module *ModuleManager::lookup(StringRef Name) {

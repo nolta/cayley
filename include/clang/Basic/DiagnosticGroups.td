@@ -163,7 +163,8 @@ def UnusedMemberFunction : DiagGroup<"unused-member-function",
                                      [UnneededMemberFunction]>;
 def UnusedLabel : DiagGroup<"unused-label">;
 def UnusedParameter : DiagGroup<"unused-parameter">;
-def UnusedValue    : DiagGroup<"unused-value">;
+def UnusedResult : DiagGroup<"unused-result">;
+def UnusedValue    : DiagGroup<"unused-value", [UnusedResult]>;
 def UnusedVariable : DiagGroup<"unused-variable">;
 def UsedButMarkedUnused : DiagGroup<"used-but-marked-unused">;
 def ReadOnlySetterAttrs : DiagGroup<"readonly-setter-attrs">;
@@ -269,7 +270,6 @@ def Most : DiagGroup<"most", [
     Uninitialized,
     UnknownPragmas,
     Unused,
-    VectorConversions,
     VolatileRegisterVar,
     OverloadedVirtual
  ]>;

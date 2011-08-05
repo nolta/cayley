@@ -789,11 +789,14 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(DIAG_PRAGMA_MAPPINGS);
   RECORD(CUDA_SPECIAL_DECL_REFS);
   RECORD(HEADER_SEARCH_TABLE);
+  RECORD(ORIGINAL_PCH_DIR);
   RECORD(FP_PRAGMA_OPTIONS);
   RECORD(OPENCL_EXTENSIONS);
   RECORD(DELEGATING_CTORS);
   RECORD(FILE_SOURCE_LOCATION_OFFSETS);
   RECORD(KNOWN_NAMESPACES);
+  RECORD(MODULE_OFFSET_MAP);
+  RECORD(SOURCE_MANAGER_LINE_TABLE);
   
   // SourceManager Block.
   BLOCK(SOURCE_MANAGER_BLOCK);
@@ -1803,12 +1806,16 @@ void ASTWriter::WritePreprocessorDetail(PreprocessingRecord &PPRec) {
     InclusionAbbrev = Stream.EmitAbbrev(Abbrev);
   }
   
-  unsigned IndexBase = Chain ? PPRec.getNumLoadedPreprocessedEntities() : 0;
+  unsigned FirstPreprocessorEntityID 
+    = (Chain ? PPRec.getNumLoadedPreprocessedEntities() : 0) 
+    + NUM_PREDEF_PP_ENTITY_IDS;
+  unsigned NextPreprocessorEntityID = FirstPreprocessorEntityID;
   RecordData Record;
   uint64_t BitsInChain = Chain? Chain->TotalModulesSizeInBits : 0;
   for (PreprocessingRecord::iterator E = PPRec.begin(Chain),
                                   EEnd = PPRec.end(Chain);
-       E != EEnd; ++E) {
+       E != EEnd; 
+       (void)++E, ++NumPreprocessingRecords, ++NextPreprocessorEntityID) {
     Record.clear();
 
     if (MacroDefinition *MD = dyn_cast<MacroDefinition>(*E)) {
@@ -1833,7 +1840,7 @@ void ASTWriter::WritePreprocessorDetail(PreprocessingRecord &PPRec) {
       } else
         MacroDefinitionOffsets.push_back(Stream.GetCurrentBitNo());
       
-      Record.push_back(IndexBase + NumPreprocessingRecords++);
+      Record.push_back(NextPreprocessorEntityID);
       Record.push_back(ID);
       AddSourceLocation(MD->getSourceRange().getBegin(), Record);
       AddSourceLocation(MD->getSourceRange().getEnd(), Record);
@@ -1849,7 +1856,7 @@ void ASTWriter::WritePreprocessorDetail(PreprocessingRecord &PPRec) {
         BitsInChain + Stream.GetCurrentBitNo());
 
     if (MacroExpansion *ME = dyn_cast<MacroExpansion>(*E)) {
-      Record.push_back(IndexBase + NumPreprocessingRecords++);
+      Record.push_back(NextPreprocessorEntityID);
       AddSourceLocation(ME->getSourceRange().getBegin(), Record);
       AddSourceLocation(ME->getSourceRange().getEnd(), Record);
       AddIdentifierRef(ME->getName(), Record);
@@ -1860,7 +1867,7 @@ void ASTWriter::WritePreprocessorDetail(PreprocessingRecord &PPRec) {
 
     if (InclusionDirective *ID = dyn_cast<InclusionDirective>(*E)) {
       Record.push_back(PPD_INCLUSION_DIRECTIVE);
-      Record.push_back(IndexBase + NumPreprocessingRecords++);
+      Record.push_back(NextPreprocessorEntityID);
       AddSourceLocation(ID->getSourceRange().getBegin(), Record);
       AddSourceLocation(ID->getSourceRange().getEnd(), Record);
       Record.push_back(ID->getFileName().size());
@@ -1884,14 +1891,18 @@ void ASTWriter::WritePreprocessorDetail(PreprocessingRecord &PPRec) {
     BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
     Abbrev->Add(BitCodeAbbrevOp(MACRO_DEFINITION_OFFSETS));
     Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // # of records
+    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // first pp entity
     Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // # of macro defs
+    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // first macro def
     Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
     unsigned MacroDefOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
 
     Record.clear();
     Record.push_back(MACRO_DEFINITION_OFFSETS);
     Record.push_back(NumPreprocessingRecords);
+    Record.push_back(FirstPreprocessorEntityID - NUM_PREDEF_PP_ENTITY_IDS);
     Record.push_back(MacroDefinitionOffsets.size());
+    Record.push_back(FirstMacroID - NUM_PREDEF_MACRO_IDS);
     Stream.EmitRecordWithBlob(MacroDefOffsetAbbrev, Record,
                               data(MacroDefinitionOffsets));
   }
@@ -1938,7 +1949,7 @@ void ASTWriter::WriteCXXBaseSpecifiersOffsets() {
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
   unsigned BaseSpecifierOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
   
-  // Write the selector offsets table.
+  // Write the base specifier offsets table.
   Record.clear();
   Record.push_back(CXX_BASE_SPECIFIER_OFFSETS);
   Record.push_back(CXXBaseSpecifiersOffsets.size());
@@ -2043,11 +2054,13 @@ void ASTWriter::WriteTypeDeclOffsets() {
   Abbrev = new BitCodeAbbrev();
   Abbrev->Add(BitCodeAbbrevOp(DECL_OFFSET));
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // # of declarations
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // base decl ID
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // declarations block
   unsigned DeclOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
   Record.clear();
   Record.push_back(DECL_OFFSET);
   Record.push_back(DeclOffsets.size());
+  Record.push_back(FirstDeclID - NUM_PREDEF_DECL_IDS);
   Stream.EmitRecordWithBlob(DeclOffsetAbbrev, Record, data(DeclOffsets));
 }
 
@@ -2227,6 +2240,7 @@ void ASTWriter::WriteSelectors(Sema &SemaRef) {
     Abbrev = new BitCodeAbbrev();
     Abbrev->Add(BitCodeAbbrevOp(SELECTOR_OFFSETS));
     Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // size
+    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // first ID
     Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
     unsigned SelectorOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
 
@@ -2234,6 +2248,7 @@ void ASTWriter::WriteSelectors(Sema &SemaRef) {
     Record.clear();
     Record.push_back(SELECTOR_OFFSETS);
     Record.push_back(SelectorOffsets.size());
+    Record.push_back(FirstSelectorID - NUM_PREDEF_SELECTOR_IDS);
     Stream.EmitRecordWithBlob(SelectorOffsetAbbrev, Record,
                               data(SelectorOffsets));
   }
@@ -2430,12 +2445,14 @@ void ASTWriter::WriteIdentifierTable(Preprocessor &PP) {
   BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
   Abbrev->Add(BitCodeAbbrevOp(IDENTIFIER_OFFSET));
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // # of identifiers
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // first ID
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
   unsigned IdentifierOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
 
   RecordData Record;
   Record.push_back(IDENTIFIER_OFFSET);
   Record.push_back(IdentifierOffsets.size());
+  Record.push_back(FirstIdentID - NUM_PREDEF_IDENT_IDS);
   Stream.EmitRecordWithBlob(IdentifierOffsetAbbrev, Record,
                             data(IdentifierOffsets));
 }
@@ -2748,14 +2765,15 @@ void ASTWriter::SetSelectorOffset(Selector Sel, uint32_t Offset) {
 
 ASTWriter::ASTWriter(llvm::BitstreamWriter &Stream)
   : Stream(Stream), Chain(0), SerializationListener(0), 
-    FirstDeclID(1), NextDeclID(FirstDeclID),
+    FirstDeclID(NUM_PREDEF_DECL_IDS), NextDeclID(FirstDeclID),
     FirstTypeID(NUM_PREDEF_TYPE_IDS), NextTypeID(FirstTypeID),
-    FirstIdentID(1), NextIdentID(FirstIdentID), FirstSelectorID(1),
-    NextSelectorID(FirstSelectorID), FirstMacroID(1), NextMacroID(FirstMacroID),
+    FirstIdentID(NUM_PREDEF_IDENT_IDS), NextIdentID(FirstIdentID), 
+    FirstSelectorID(NUM_PREDEF_SELECTOR_IDS), NextSelectorID(FirstSelectorID),
+    FirstMacroID(NUM_PREDEF_MACRO_IDS), NextMacroID(FirstMacroID),
     CollectedStmts(&StmtsToEmit),
     NumStatements(0), NumMacros(0), NumLexicalDeclContexts(0),
     NumVisibleDeclContexts(0),
-    FirstCXXBaseSpecifiersID(1), NextCXXBaseSpecifiersID(1),
+    NextCXXBaseSpecifiersID(1),
     DeclParmVarAbbrev(0), DeclContextLexicalAbbrev(0),
     DeclContextVisibleLookupAbbrev(0), UpdateVisibleAbbrev(0),
     DeclRefExprAbbrev(0), CharacterLiteralAbbrev(0),
@@ -3080,7 +3098,6 @@ void ASTWriter::WriteASTChain(Sema &SemaRef, MemorizeStatCalls *StatCalls,
       io::Emit32(Out, (*M)->BaseMacroDefinitionID);
       io::Emit32(Out, (*M)->BaseSelectorID);
       io::Emit32(Out, (*M)->BaseDeclID);
-      io::Emit32(Out, (*M)->BaseCXXBaseSpecifiersID);
       io::Emit32(Out, (*M)->BaseTypeIndex);
     }
   }
@@ -3882,7 +3899,7 @@ void ASTWriter::FlushCXXBaseSpecifiers() {
     Record.clear();
     
     // Record the offset of this base-specifier set.
-    unsigned Index = CXXBaseSpecifiersToWrite[I].ID - FirstCXXBaseSpecifiersID;
+    unsigned Index = CXXBaseSpecifiersToWrite[I].ID - 1;
     if (Index == CXXBaseSpecifiersOffsets.size())
       CXXBaseSpecifiersOffsets.push_back(Stream.GetCurrentBitNo());
     else {
@@ -4001,7 +4018,6 @@ void ASTWriter::ReaderInitialized(ASTReader *Reader) {
          FirstIdentID == NextIdentID &&
          FirstSelectorID == NextSelectorID &&
          FirstMacroID == NextMacroID &&
-         FirstCXXBaseSpecifiersID == NextCXXBaseSpecifiersID &&
          "Setting chain after writing has started.");
 
   Chain = Reader;
@@ -4011,13 +4027,11 @@ void ASTWriter::ReaderInitialized(ASTReader *Reader) {
   FirstIdentID += Chain->getTotalNumIdentifiers();
   FirstSelectorID += Chain->getTotalNumSelectors();
   FirstMacroID += Chain->getTotalNumMacroDefinitions();
-  FirstCXXBaseSpecifiersID += Chain->getTotalNumCXXBaseSpecifiers();
   NextDeclID = FirstDeclID;
   NextTypeID = FirstTypeID;
   NextIdentID = FirstIdentID;
   NextSelectorID = FirstSelectorID;
   NextMacroID = FirstMacroID;
-  NextCXXBaseSpecifiersID = FirstCXXBaseSpecifiersID;
 }
 
 void ASTWriter::IdentifierRead(IdentID ID, IdentifierInfo *II) {

@@ -319,7 +319,7 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall) {
                           TheCall->getCallee()->getLocStart());
   }
 
-  // Memset/memcpy/memmove handling
+  // Memset/memcpy/memmove/memcmp handling
   int CMF = -1;
   switch (FDecl->getBuiltinID()) {
   case Builtin::BI__builtin_memset:
@@ -340,6 +340,10 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall) {
     CMF = CMF_Memmove;
     break;
     
+  case Builtin::BI__builtin_memcmp:
+    CMF = CMF_Memcmp;
+    break;
+    
   default:
     if (FDecl->getLinkage() == ExternalLinkage &&
         (!getLangOptions().CPlusPlus || FDecl->isExternC())) {
@@ -349,12 +353,14 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall) {
         CMF = CMF_Memcpy;
       else if (FnInfo->isStr("memmove"))
         CMF = CMF_Memmove;
+      else if (FnInfo->isStr("memcmp"))
+        CMF = CMF_Memcmp;
     }
     break;
   }
    
   if (CMF != -1)
-    CheckMemsetcpymoveArguments(TheCall, CheckedMemoryFunction(CMF), FnInfo);
+    CheckMemaccessArguments(TheCall, CheckedMemoryFunction(CMF), FnInfo);
 
   return false;
 }
@@ -1881,12 +1887,13 @@ static QualType getSizeOfArgType(const Expr* E) {
 /// \brief Check for dangerous or invalid arguments to memset().
 ///
 /// This issues warnings on known problematic, dangerous or unspecified
-/// arguments to the standard 'memset', 'memcpy', and 'memmove' function calls.
+/// arguments to the standard 'memset', 'memcpy', 'memmove', and 'memcmp'
+/// function calls.
 ///
 /// \param Call The call expression to diagnose.
-void Sema::CheckMemsetcpymoveArguments(const CallExpr *Call,
-                                       CheckedMemoryFunction CMF,
-                                       IdentifierInfo *FnName) {
+void Sema::CheckMemaccessArguments(const CallExpr *Call,
+                                   CheckedMemoryFunction CMF,
+                                   IdentifierInfo *FnName) {
   // It is possible to have a non-standard definition of memset.  Validate
   // we have enough arguments, and if not, abort further checking.
   if (Call->getNumArgs() < 3)
@@ -3481,6 +3488,42 @@ void Sema::CheckCastAlign(Expr *Op, QualType T, SourceRange TRange) {
     << TRange << Op->getSourceRange();
 }
 
+/// \brief Check whether this array fits the idiom of a size-one tail padded
+/// array member of a struct.
+///
+/// We avoid emitting out-of-bounds access warnings for such arrays as they are
+/// commonly used to emulate flexible arrays in C89 code.
+static bool IsTailPaddedMemberArray(Sema &S, llvm::APInt Size,
+                                    const NamedDecl *ND) {
+  if (Size != 1 || !ND) return false;
+
+  const FieldDecl *FD = dyn_cast<FieldDecl>(ND);
+  if (!FD) return false;
+
+  // Don't consider sizes resulting from macro expansions or template argument
+  // substitution to form C89 tail-padded arrays.
+  ConstantArrayTypeLoc TL =
+    cast<ConstantArrayTypeLoc>(FD->getTypeSourceInfo()->getTypeLoc());
+  const Expr *SizeExpr = dyn_cast<IntegerLiteral>(TL.getSizeExpr());
+  if (!SizeExpr || SizeExpr->getExprLoc().isMacroID())
+    return false;
+
+  const RecordDecl *RD = dyn_cast<RecordDecl>(FD->getDeclContext());
+  if (!RD || !RD->isStruct())
+    return false;
+
+  // This is annoyingly inefficient. We don't have a bi-directional iterator
+  // here so we can't walk backwards through the decls, we have to walk
+  // forward.
+  for (RecordDecl::field_iterator FI = RD->field_begin(),
+                                  FEnd = RD->field_end();
+       FI != FEnd; ++FI) {
+    if (*FI == FD)
+      return ++FI == FEnd;
+  }
+  return false;
+}
+
 static void CheckArrayAccess_Check(Sema &S,
                                    const clang::ArraySubscriptExpr *E) {
   const Expr *BaseExpr = E->getBase()->IgnoreParenImpCasts();
@@ -3496,6 +3539,12 @@ static void CheckArrayAccess_Check(Sema &S,
   if (!IndexExpr->isIntegerConstantExpr(index, S.Context))
     return;
 
+  const NamedDecl *ND = NULL;
+  if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(BaseExpr))
+    ND = dyn_cast<NamedDecl>(DRE->getDecl());
+  if (const MemberExpr *ME = dyn_cast<MemberExpr>(BaseExpr))
+    ND = dyn_cast<NamedDecl>(ME->getMemberDecl());
+
   if (index.isUnsigned() || !index.isNegative()) {
     llvm::APInt size = ArrayTy->getSize();
     if (!size.isStrictlyPositive())
@@ -3505,13 +3554,21 @@ static void CheckArrayAccess_Check(Sema &S,
     else if (size.getBitWidth() < index.getBitWidth())
       size = size.sext(index.getBitWidth());
 
+    // Don't warn for valid indexes
     if (index.slt(size))
+      return;
+
+    // Also don't warn for arrays of size 1 which are members of some
+    // structure. These are often used to approximate flexible arrays in C89
+    // code.
+    if (IsTailPaddedMemberArray(S, size, ND))
       return;
 
     S.DiagRuntimeBehavior(E->getBase()->getLocStart(), BaseExpr,
                           S.PDiag(diag::warn_array_index_exceeds_bounds)
                             << index.toString(10, true)
                             << size.toString(10, true)
+                            << (unsigned)size.ugt(1)
                             << IndexExpr->getSourceRange());
   } else {
     S.DiagRuntimeBehavior(E->getBase()->getLocStart(), BaseExpr,
@@ -3520,11 +3577,6 @@ static void CheckArrayAccess_Check(Sema &S,
                             << IndexExpr->getSourceRange());
   }
 
-  const NamedDecl *ND = NULL;
-  if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(BaseExpr))
-    ND = dyn_cast<NamedDecl>(DRE->getDecl());
-  if (const MemberExpr *ME = dyn_cast<MemberExpr>(BaseExpr))
-    ND = dyn_cast<NamedDecl>(ME->getMemberDecl());
   if (ND)
     S.DiagRuntimeBehavior(ND->getLocStart(), BaseExpr,
                           S.PDiag(diag::note_array_index_out_of_bounds)

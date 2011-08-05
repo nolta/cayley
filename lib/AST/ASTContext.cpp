@@ -556,35 +556,33 @@ void ASTContext::setInstantiatedFromUnnamedFieldDecl(FieldDecl *Inst,
 bool ASTContext::ZeroBitfieldFollowsNonBitfield(const FieldDecl *FD, 
                                     const FieldDecl *LastFD) const {
   return (FD->isBitField() && LastFD && !LastFD->isBitField() &&
-          FD->getBitWidth()-> EvaluateAsInt(*this).getZExtValue() == 0);
-  
+          FD->getBitWidth()->EvaluateAsInt(*this).getZExtValue() == 0);
 }
 
 bool ASTContext::ZeroBitfieldFollowsBitfield(const FieldDecl *FD,
                                              const FieldDecl *LastFD) const {
   return (FD->isBitField() && LastFD && LastFD->isBitField() &&
-          FD->getBitWidth()-> EvaluateAsInt(*this).getZExtValue() == 0 &&
-          LastFD->getBitWidth()-> EvaluateAsInt(*this).getZExtValue() != 0);
-
+          FD->getBitWidth()->EvaluateAsInt(*this).getZExtValue() == 0 &&
+          LastFD->getBitWidth()->EvaluateAsInt(*this).getZExtValue() != 0);
 }
 
 bool ASTContext::BitfieldFollowsBitfield(const FieldDecl *FD,
                                          const FieldDecl *LastFD) const {
   return (FD->isBitField() && LastFD && LastFD->isBitField() &&
-          FD->getBitWidth()-> EvaluateAsInt(*this).getZExtValue() &&
-          LastFD->getBitWidth()-> EvaluateAsInt(*this).getZExtValue());  
+          FD->getBitWidth()->EvaluateAsInt(*this).getZExtValue() &&
+          LastFD->getBitWidth()->EvaluateAsInt(*this).getZExtValue());
 }
 
-bool ASTContext::NoneBitfieldFollowsBitfield(const FieldDecl *FD,
+bool ASTContext::NonBitfieldFollowsBitfield(const FieldDecl *FD,
                                          const FieldDecl *LastFD) const {
   return (!FD->isBitField() && LastFD && LastFD->isBitField() &&
-          LastFD->getBitWidth()-> EvaluateAsInt(*this).getZExtValue());  
+          LastFD->getBitWidth()->EvaluateAsInt(*this).getZExtValue());  
 }
 
-bool ASTContext::BitfieldFollowsNoneBitfield(const FieldDecl *FD,
+bool ASTContext::BitfieldFollowsNonBitfield(const FieldDecl *FD,
                                              const FieldDecl *LastFD) const {
   return (FD->isBitField() && LastFD && !LastFD->isBitField() &&
-          FD->getBitWidth()-> EvaluateAsInt(*this).getZExtValue());  
+          FD->getBitWidth()->EvaluateAsInt(*this).getZExtValue());  
 }
 
 ASTContext::overridden_cxx_method_iterator
@@ -3987,7 +3985,6 @@ std::string ASTContext::getObjCEncodingForBlock(const BlockExpr *Expr) const {
   S += charUnitsToString(ParmOffset);
   // Block pointer and offset.
   S += "@?0";
-  ParmOffset = PtrSize;
   
   // Argument types.
   ParmOffset = PtrSize;

@@ -2971,6 +2971,9 @@ def warn_member_extra_qualification : Warning<
 def err_member_qualification : Error<
   "non-friend class member %0 cannot have a qualified name">;  
 def note_member_def_close_match : Note<"member declaration nearly matches">;
+def note_member_def_close_param_match : Note<
+  "type of %ordinal0 parameter of member declaration does not match "
+  "definition (%1 vs %2)">;
 def err_typecheck_ivar_variable_size : Error<
   "instance variables must have a constant size">;
 def err_ivar_reference_type : Error<
@@ -3780,6 +3783,9 @@ def warn_unused_property_expr : Warning<
 def warn_unused_call : Warning<
   "ignoring return value of function declared with %0 attribute">,
   InGroup<UnusedValue>;
+def warn_unused_result : Warning<
+  "ignoring return value of function declared with warn_unused_result "
+  "attribute">, InGroup<DiagGroup<"unused-result">>;
 
 def err_incomplete_type_used_in_type_trait_expr : Error<
   "incomplete type %0 used in type trait expression">;
@@ -4083,7 +4089,8 @@ def warn_array_index_precedes_bounds : Warning<
   "array index of '%0' indexes before the beginning of the array">,
   InGroup<DiagGroup<"array-bounds">>;
 def warn_array_index_exceeds_bounds : Warning<
-  "array index of '%0' indexes past the end of an array (that contains %1 elements)">,
+  "array index of '%0' indexes past the end of an array (that contains %1 "
+  "%select{element|elements}2)">,
   InGroup<DiagGroup<"array-bounds">>;
 def note_array_index_out_of_bounds : Note<
   "array %0 declared here">;
@@ -4151,15 +4158,20 @@ def warn_scanf_scanlist_incomplete : Warning<
   
 // CHECK: returning address/reference of stack memory
 def warn_ret_stack_addr : Warning<
-  "address of stack memory associated with local variable %0 returned">;
+  "address of stack memory associated with local variable %0 returned">,
+  InGroup<DiagGroup<"return-stack-address">>;
 def warn_ret_stack_ref : Warning<
-  "reference to stack memory associated with local variable %0 returned">;
+  "reference to stack memory associated with local variable %0 returned">,
+  InGroup<DiagGroup<"return-stack-address">>;
 def warn_ret_local_temp_addr : Warning<
-  "returning address of local temporary object">;
+  "returning address of local temporary object">,
+  InGroup<DiagGroup<"return-stack-address">>;
 def warn_ret_local_temp_ref : Warning<
-  "returning reference to local temporary object">;
+  "returning reference to local temporary object">,
+  InGroup<DiagGroup<"return-stack-address">>;
 def warn_ret_addr_label : Warning<
-  "returning address of label, which is local">;
+  "returning address of label, which is local">,
+  InGroup<DiagGroup<"return-stack-address">>;
 def err_ret_local_block : Error<
   "returning block that lives on the local stack">;
 def note_ref_var_local_bind : Note<

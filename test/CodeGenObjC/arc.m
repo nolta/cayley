@@ -578,18 +578,18 @@ void test22(_Bool cond) {
   // CHECK:      define void @test22(
   // CHECK:      [[COND:%.*]] = alloca i8,
   // CHECK-NEXT: [[X:%.*]] = alloca i8*,
-  // CHECK-NEXT: [[RELCOND:%.*]] = alloca i1
   // CHECK-NEXT: [[RELVAL:%.*]] = alloca i8*
-  // CHECK-NEXT: store i1 false, i1* [[RELCOND]]
+  // CHECK-NEXT: [[RELCOND:%.*]] = alloca i1
   // CHECK-NEXT: zext
   // CHECK-NEXT: store
   // CHECK-NEXT: [[T0:%.*]] = load i8* [[COND]]
   // CHECK-NEXT: [[T1:%.*]] = trunc i8 [[T0]] to i1
+  // CHECK-NEXT: store i1 false, i1* [[RELCOND]]
   // CHECK-NEXT: br i1 [[T1]],
   // CHECK:      br label
   // CHECK:      [[CALL:%.*]] = call i8* @test22_helper()
-  // CHECK-NEXT: store i1 true, i1* [[RELCOND]]
   // CHECK-NEXT: store i8* [[CALL]], i8** [[RELVAL]]
+  // CHECK-NEXT: store i1 true, i1* [[RELCOND]]
   // CHECK-NEXT: br label
   // CHECK:      [[T0:%.*]] = phi i8* [ null, {{%.*}} ], [ [[CALL]], {{%.*}} ]
   // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retain(i8* [[T0]]) nounwind
@@ -1753,4 +1753,89 @@ void test60b(void) {
   // CHECK-NEXT: [[T2:%.*]] = bitcast void ()* [[T1]] to i8*
   // CHECK-NEXT: call void @objc_release(i8* [[T2]])
   // CHECK-NEXT: ret void
+}
+
+// Verify that we don't try to reclaim the result of performSelector.
+// rdar://problem/9887545
+@interface Test61
+- (id) performSelector: (SEL) selector;
+- (void) test61_void;
+- (id) test61_id;
+@end
+void test61(void) {
+  // CHECK:    define void @test61()
+  // CHECK:      [[Y:%.*]] = alloca i8*, align 8
+
+  extern id test61_make(void);
+
+  // CHECK-NEXT: [[T0:%.*]] = call i8* @test61_make()
+  // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
+  // CHECK-NEXT: [[T2:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
+  // CHECK-NEXT: [[T3:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
+  // CHECK-NEXT: [[T4:%.*]] = call i8* bitcast (i8* (i8*, i8*, ...)* @objc_msgSend to i8* (i8*, i8*, i8*)*)(i8* [[T1]], i8* [[T3]], i8* [[T2]])
+  // CHECK-NEXT: call void @objc_release(i8* [[T1]])
+  [test61_make() performSelector: @selector(test61_void)];
+
+  // CHECK-NEXT: [[T0:%.*]] = call i8* @test61_make()
+  // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
+  // CHECK-NEXT: [[T2:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
+  // CHECK-NEXT: [[T3:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
+  // CHECK-NEXT: [[T4:%.*]] = call i8* bitcast (i8* (i8*, i8*, ...)* @objc_msgSend to i8* (i8*, i8*, i8*)*)(i8* [[T1]], i8* [[T3]], i8* [[T2]])
+  // CHECK-NEXT: [[T5:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T4]])
+  // CHECK-NEXT: store i8* [[T5]], i8** [[Y]]
+  // CHECK-NEXT: call void @objc_release(i8* [[T1]])
+  id y = [test61_make() performSelector: @selector(test61_id)];
+
+  // CHECK-NEXT: [[T0:%.*]] = load i8** [[Y]]
+  // CHECK-NEXT: call void @objc_release(i8* [[T0]])
+  // CHECK-NEXT: ret void
+}
+
+// rdar://problem/9891815
+void test62(void) {
+  // CHECK:    define void @test62()
+  // CHECK:      [[I:%.*]] = alloca i32, align 4
+  // CHECK-NEXT: [[CLEANUP_VALUE:%.*]] = alloca i8*
+  // CHECK-NEXT: [[CLEANUP_REQUIRED:%.*]] = alloca i1
+  extern id test62_make(void);
+  extern void test62_body(void);
+
+  // CHECK-NEXT: store i32 0, i32* [[I]], align 4
+  // CHECK-NEXT: br label
+
+  // CHECK:      [[T0:%.*]] = load i32* [[I]], align 4
+  // CHECK-NEXT: [[T1:%.*]] = icmp ne i32 [[T0]], 20
+  // CHECK-NEXT: br i1 [[T1]],
+
+  for (unsigned i = 0; i != 20; ++i) {
+    // CHECK:      [[T0:%.*]] = load i32* [[I]], align 4
+    // CHECK-NEXT: [[T1:%.*]] = icmp ne i32 [[T0]], 0
+    // CHECK-NEXT: store i1 false, i1* [[CLEANUP_REQUIRED]]
+    // CHECK-NEXT: br i1 [[T1]],
+    // CHECK:      [[T0:%.*]] = call i8* @test62_make()
+    // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
+    // CHECK-NEXT: store i8* [[T1]], i8** [[CLEANUP_VALUE]]
+    // CHECK-NEXT: store i1 true, i1* [[CLEANUP_REQUIRED]]
+    // CHECK-NEXT: [[T2:%.*]] = icmp ne i8* [[T1]], null
+    // CHECK-NEXT: br label
+    // CHECK:      [[COND:%.*]] = phi i1 [ false, {{%.*}} ], [ [[T2]], {{%.*}} ]
+    // CHECK-NEXT: [[T0:%.*]] = load i1* [[CLEANUP_REQUIRED]]
+    // CHECK-NEXT: br i1 [[T0]],
+    // CHECK:      [[T0:%.*]] = load i8** [[CLEANUP_VALUE]]
+    // CHECK-NEXT: call void @objc_release(i8* [[T0]])
+    // CHECK-NEXT: br label
+    // CHECK:      br i1 [[COND]]
+    // CHECK:      call void @test62_body()
+    // CHECK-NEXT: br label
+    // CHECK:      br label
+    if (i != 0 && test62_make() != 0)
+      test62_body();
+  }
+
+  // CHECK:      [[T0:%.*]] = load i32* [[I]], align 4
+  // CHECK-NEXT: [[T1:%.*]] = add i32 [[T0]], 1
+  // CHECK-NEXT: store i32 [[T1]], i32* [[I]]
+  // CHECK-NEXT: br label
+
+  // CHECK:      ret void
 }

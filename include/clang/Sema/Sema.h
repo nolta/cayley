@@ -493,6 +493,23 @@ public:
   /// a potentially evaluated expression.
   typedef SmallVector<std::pair<SourceLocation, Decl *>, 10>
     PotentiallyReferencedDecls;
+    
+  // FIXME. Improve on accessibility.
+  class PROTOCOL_METHODS {
+  public:
+    Selector Sel;
+    ObjCMethodDecl *Method;
+    PROTOCOL_METHODS(Selector S, ObjCMethodDecl *M) 
+        : Sel(S), Method(M) {}
+    // Allow sorting based on selector's opaque pointer.
+    bool operator<(const PROTOCOL_METHODS &b) const {
+          return Sel < b.Sel;
+    }
+  };
+
+  /// \brief The set of protocols declared in protocols qualifying a
+  /// class.
+  typedef SmallVector<PROTOCOL_METHODS, 16> MethodsInProtocols;
 
   /// \brief A set of diagnostics that may be emitted.
   typedef SmallVector<std::pair<SourceLocation, PartialDiagnostic>, 10>
@@ -1782,12 +1799,18 @@ public:
   void WarnExactTypedMethods(ObjCMethodDecl *Method,
                              ObjCMethodDecl *MethodDecl,
                              bool IsProtocolMethodDecl);
-
+    
+  /// WarnOnMismatchedProtocolMethods - Issues warning on type mismatched 
+  /// protocols methods and then returns true(matched), or false(mismatched).
+  bool WarnOnMismatchedProtocolMethods(ObjCMethodDecl *Method,
+                                       ObjCMethodDecl *MethodDecl);
+                            
   bool isPropertyReadonly(ObjCPropertyDecl *PropertyDecl,
                           ObjCInterfaceDecl *IDecl);
 
   typedef llvm::DenseSet<Selector, llvm::DenseMapInfo<Selector> > SelectorSet;
-
+  typedef llvm::DenseMap<Selector, ObjCMethodDecl*> ProtocolsMethodsMap;
+                         
   /// CheckProtocolMethodDefs - This routine checks unimplemented
   /// methods declared in protocol, and those referenced by it.
   /// \param IDecl - Used for checking for methods which may have been
@@ -1905,10 +1928,16 @@ public:
                                   bool ImmediateClass,
                                   bool WarnExactMatch=false);
 
+  /// MatchIdenticalSelectorsInProtocols - Check that mathods with
+  /// identical selectors in all protocols of this class type match.
+  /// Issue warning if they don't.
+  void MatchIdenticalSelectorsInProtocols(const ObjCInterfaceDecl *CDecl);
+
   /// MatchMethodsInClassAndItsProtocol - Check that any redeclaration of
   /// method in protocol in its qualified class match in their type and
   /// issue warnings otherwise.
   void MatchMethodsInClassAndItsProtocol(const ObjCInterfaceDecl *CDecl);
+    
 
   /// CheckCategoryVsClassMethodMatches - Checks that methods implemented in
   /// category matches with those implemented in its primary class and
@@ -2237,7 +2266,9 @@ public:
                               const TemplateArgumentListInfo *&TemplateArgs);
 
   bool DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
-                           CorrectTypoContext CTC = CTC_Unknown);
+                           CorrectTypoContext CTC = CTC_Unknown,
+                           TemplateArgumentListInfo *ExplicitTemplateArgs = 0,
+                           Expr **Args = 0, unsigned NumArgs = 0);
 
   ExprResult LookupInObjCMethod(LookupResult &R, Scope *S, IdentifierInfo *II,
                                 bool AllowBuiltinCreation=false);
@@ -5969,16 +6000,16 @@ private:
                                  bool isPrintf);
 
   /// \brief Enumeration used to describe which of the memory setting or copying
-  /// functions is being checked by \c CheckMemsetcpymoveArguments().
+  /// functions is being checked by \c CheckMemaccessArguments().
   enum CheckedMemoryFunction {
     CMF_Memset,
     CMF_Memcpy,
-    CMF_Memmove
+    CMF_Memmove,
+    CMF_Memcmp
   };
   
-  void CheckMemsetcpymoveArguments(const CallExpr *Call, 
-                                   CheckedMemoryFunction CMF,
-                                   IdentifierInfo *FnName);
+  void CheckMemaccessArguments(const CallExpr *Call, CheckedMemoryFunction CMF,
+                               IdentifierInfo *FnName);
 
   void CheckReturnStackAddr(Expr *RetValExp, QualType lhsType,
                             SourceLocation ReturnLoc);

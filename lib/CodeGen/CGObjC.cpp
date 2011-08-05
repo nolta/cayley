@@ -995,7 +995,6 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
     variable = EmitAutoVarAlloca(*cast<VarDecl>(SD->getSingleDecl()));
 
   JumpDest LoopEnd = getJumpDestInCurrentScope("forcoll.end");
-  JumpDest AfterBody = getJumpDestInCurrentScope("forcoll.next");
 
   // Fast enumeration state.
   QualType StateTy = getContext().getObjCFastEnumerationStateType();
@@ -1030,6 +1029,10 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
   } else {
     Collection = EmitScalarExpr(S.getCollection());
   }
+
+  // The 'continue' label needs to appear within the cleanup for the
+  // collection object.
+  JumpDest AfterBody = getJumpDestInCurrentScope("forcoll.next");
 
   // Send it our message:
   CallArgList Args;
@@ -1273,33 +1276,11 @@ llvm::Value *CodeGenFunction::EmitObjCProduceObject(QualType type,
 
 namespace {
   struct CallObjCRelease : EHScopeStack::Cleanup {
-    CallObjCRelease(QualType type, llvm::Value *ptr, llvm::Value *condition)
-      : type(type), ptr(ptr), condition(condition) {}
-    QualType type;
-    llvm::Value *ptr;
-    llvm::Value *condition;
+    CallObjCRelease(llvm::Value *object) : object(object) {}
+    llvm::Value *object;
 
     void Emit(CodeGenFunction &CGF, Flags flags) {
-      llvm::Value *object;
-
-      // If we're in a conditional branch, we had to stash away in an
-      // alloca the pointer to be released.
-      llvm::BasicBlock *cont = 0;
-      if (condition) {
-        llvm::BasicBlock *release = CGF.createBasicBlock("release.yes");
-        cont = CGF.createBasicBlock("release.cont");
-
-        llvm::Value *cond = CGF.Builder.CreateLoad(condition);
-        CGF.Builder.CreateCondBr(cond, release, cont);
-        CGF.EmitBlock(release);
-        object = CGF.Builder.CreateLoad(ptr);
-      } else {
-        object = ptr;
-      }
-
       CGF.EmitARCRelease(object, /*precise*/ true);
-
-      if (cont) CGF.EmitBlock(cont);
     }
   };
 }
@@ -1309,27 +1290,8 @@ namespace {
 llvm::Value *CodeGenFunction::EmitObjCConsumeObject(QualType type,
                                                     llvm::Value *object) {
   // If we're in a conditional branch, we need to make the cleanup
-  // conditional.  FIXME: this really needs to be supported by the
-  // environment.
-  llvm::AllocaInst *cond;
-  llvm::Value *ptr;
-  if (isInConditionalBranch()) {
-    cond = CreateTempAlloca(Builder.getInt1Ty(), "release.cond");
-    ptr = CreateTempAlloca(object->getType(), "release.value");
-
-    // The alloca is false until we get here.
-    // FIXME: er. doesn't this need to be set at the start of the condition?
-    InitTempAlloca(cond, Builder.getFalse());
-
-    // Then it turns true.
-    Builder.CreateStore(Builder.getTrue(), cond);
-    Builder.CreateStore(object, ptr);
-  } else {
-    cond = 0;
-    ptr = object;
-  }
-
-  EHStack.pushCleanup<CallObjCRelease>(getARCCleanupKind(), type, ptr, cond);
+  // conditional.
+  pushFullExprCleanup<CallObjCRelease>(getARCCleanupKind(), object);
   return object;
 }
 
