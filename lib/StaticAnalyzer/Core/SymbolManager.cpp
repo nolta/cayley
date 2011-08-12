@@ -231,7 +231,13 @@ QualType SymbolRegionValue::getType(ASTContext& C) const {
   return R->getValueType();
 }
 
-SymbolManager::~SymbolManager() {}
+SymbolManager::~SymbolManager() {
+  for (SymbolDependTy::const_iterator I = SymbolDependencies.begin(),
+       E = SymbolDependencies.end(); I != E; ++I) {
+    delete I->second;
+  }
+
+}
 
 bool SymbolManager::canSymbolicate(QualType T) {
   T = T.getCanonicalType();
@@ -248,9 +254,53 @@ bool SymbolManager::canSymbolicate(QualType T) {
   return false;
 }
 
+void SymbolManager::addSymbolDependency(const SymbolRef Primary,
+                                        const SymbolRef Dependent) {
+  SymbolDependTy::iterator I = SymbolDependencies.find(Primary);
+  SymbolRefSmallVectorTy *dependencies = 0;
+  if (I == SymbolDependencies.end()) {
+    dependencies = new SymbolRefSmallVectorTy();
+    SymbolDependencies[Primary] = dependencies;
+  } else {
+    dependencies = I->second;
+  }
+  dependencies->push_back(Dependent);
+}
+
+const SymbolRefSmallVectorTy *SymbolManager::getDependentSymbols(
+                                                     const SymbolRef Primary) {
+  SymbolDependTy::const_iterator I = SymbolDependencies.find(Primary);
+  if (I == SymbolDependencies.end())
+    return 0;
+  return I->second;
+}
+
+void SymbolReaper::markDependentsLive(SymbolRef sym) {
+  // Do not mark dependents more then once.
+  SymbolMapTy::iterator LI = TheLiving.find(sym);
+  assert(LI != TheLiving.end() && "The primary symbol is not live.");
+  if (LI->second == HaveMarkedDependents)
+    return;
+  LI->second = HaveMarkedDependents;
+
+  if (const SymbolRefSmallVectorTy *Deps = SymMgr.getDependentSymbols(sym)) {
+    for (SymbolRefSmallVectorTy::const_iterator I = Deps->begin(),
+                                                E = Deps->end(); I != E; ++I) {
+      if (TheLiving.find(*I) != TheLiving.end())
+        continue;
+      markLive(*I);
+    }
+  }
+}
+
 void SymbolReaper::markLive(SymbolRef sym) {
-  TheLiving.insert(sym);
+  TheLiving[sym] = NotProcessed;
   TheDead.erase(sym);
+  markDependentsLive(sym);
+}
+
+void SymbolReaper::markLive(const MemRegion *region) {
+  RegionRoots.insert(region);
 }
 
 void SymbolReaper::markInUse(SymbolRef sym) {
@@ -266,14 +316,17 @@ bool SymbolReaper::maybeDead(SymbolRef sym) {
   return true;
 }
 
-static bool IsLiveRegion(SymbolReaper &Reaper, const MemRegion *MR) {
+bool SymbolReaper::isLiveRegion(const MemRegion *MR) {
+  if (RegionRoots.count(MR))
+    return true;
+  
   MR = MR->getBaseRegion();
 
   if (const SymbolicRegion *SR = dyn_cast<SymbolicRegion>(MR))
-    return Reaper.isLive(SR->getSymbol());
+    return isLive(SR->getSymbol());
 
   if (const VarRegion *VR = dyn_cast<VarRegion>(MR))
-    return Reaper.isLive(VR, true);
+    return isLive(VR, true);
 
   // FIXME: This is a gross over-approximation. What we really need is a way to
   // tell if anything still refers to this region. Unlike SymbolicRegions,
@@ -292,8 +345,10 @@ static bool IsLiveRegion(SymbolReaper &Reaper, const MemRegion *MR) {
 }
 
 bool SymbolReaper::isLive(SymbolRef sym) {
-  if (TheLiving.count(sym))
+  if (TheLiving.count(sym)) {
+    markDependentsLive(sym);
     return true;
+  }
 
   if (const SymbolDerived *derived = dyn_cast<SymbolDerived>(sym)) {
     if (isLive(derived->getParentSymbol())) {
@@ -304,7 +359,7 @@ bool SymbolReaper::isLive(SymbolRef sym) {
   }
 
   if (const SymbolExtent *extent = dyn_cast<SymbolExtent>(sym)) {
-    if (IsLiveRegion(*this, extent->getRegion())) {
+    if (isLiveRegion(extent->getRegion())) {
       markLive(sym);
       return true;
     }
@@ -313,7 +368,7 @@ bool SymbolReaper::isLive(SymbolRef sym) {
 
   if (const SymbolMetadata *metadata = dyn_cast<SymbolMetadata>(sym)) {
     if (MetadataInUse.count(sym)) {
-      if (IsLiveRegion(*this, metadata->getRegion())) {
+      if (isLiveRegion(metadata->getRegion())) {
         markLive(sym);
         MetadataInUse.erase(sym);
         return true;

@@ -2092,7 +2092,8 @@ ASTReader::ReadASTBlock(Module &F) {
       if (F.LocalNumDecls > 0) {
         // Introduce the global -> local mapping for declarations within this 
         // module.
-        GlobalDeclMap.insert(std::make_pair(getTotalNumDecls() + 1, &F));
+        GlobalDeclMap.insert(
+          std::make_pair(getTotalNumDecls() + NUM_PREDEF_DECL_IDS, &F));
         
         // Introduce the local -> global mapping for declarations within this
         // module.
@@ -2111,8 +2112,12 @@ ASTReader::ReadASTBlock(Module &F) {
         reinterpret_cast<const KindDeclIDPair *>(BlobStart),
         static_cast<unsigned int>(BlobLen / sizeof(KindDeclIDPair))
       };
-      DeclContextOffsets[Context ? Context->getTranslationUnitDecl() : 0]
-        .push_back(Info);
+
+      DeclContext *TU = Context ? Context->getTranslationUnitDecl() : 0;
+      DeclContextOffsets[TU].push_back(Info);
+      if (TU)
+        TU->setHasExternalLexicalStorage(true);
+
       break;
     }
 
@@ -2124,11 +2129,14 @@ ASTReader::ReadASTBlock(Module &F) {
                         (const unsigned char *)BlobStart,
                         ASTDeclContextNameLookupTrait(*this, F));
       // FIXME: Complete hack to check for the TU
-      if (ID == (*(ModuleMgr.end() - 1))->BaseDeclID + 1 && Context) { // Is it the TU?
+      if (ID == PREDEF_DECL_TRANSLATION_UNIT_ID && Context) { // Is it the TU?
         DeclContextInfo Info = {
           &F, Table, /* No lexical information */ 0, 0
         };
-        DeclContextOffsets[Context->getTranslationUnitDecl()].push_back(Info);
+
+        DeclContext *TU = Context->getTranslationUnitDecl();
+        DeclContextOffsets[TU].push_back(Info);
+        TU->setHasExternalVisibleStorage(true);
       } else
         PendingVisibleUpdates[ID].push_back(std::make_pair(Table, &F));
       break;
@@ -2949,107 +2957,142 @@ void ASTReader::InitializeContext(ASTContext &Ctx) {
   
   // If we have an update block for the TU waiting, we have to add it before
   // deserializing the decl.
+  TranslationUnitDecl *TU = Ctx.getTranslationUnitDecl();
   DeclContextOffsetsMap::iterator DCU = DeclContextOffsets.find(0);
   if (DCU != DeclContextOffsets.end()) {
     // Insertion could invalidate map, so grab vector.
     DeclContextInfos T;
     T.swap(DCU->second);
     DeclContextOffsets.erase(DCU);
-    DeclContextOffsets[Ctx.getTranslationUnitDecl()].swap(T);
+    DeclContextOffsets[TU].swap(T);
+  }
+  
+  // If there's a listener, notify them that we "read" the translation unit.
+  if (DeserializationListener)
+    DeserializationListener->DeclRead(PREDEF_DECL_TRANSLATION_UNIT_ID, TU);
+
+  // Make sure we load the declaration update records for the translation unit,
+  // if there are any.
+  loadDeclUpdateRecords(PREDEF_DECL_TRANSLATION_UNIT_ID, TU);
+  
+  // Note that the translation unit has external lexical and visible storage.
+  TU->setHasExternalLexicalStorage(true);
+  TU->setHasExternalVisibleStorage(true);
+
+  // FIXME: Find a better way to deal with collisions between these
+  // built-in types. Right now, we just ignore the problem.
+  
+  // Load the special types.
+  if (Context->getBuiltinVaListType().isNull()) {
+    Context->setBuiltinVaListType(
+      GetType(SpecialTypes[SPECIAL_TYPE_BUILTIN_VA_LIST]));
+  }
+  
+  if (unsigned Id = SpecialTypes[SPECIAL_TYPE_OBJC_ID]) {
+    if (Context->ObjCIdTypedefType.isNull())
+      Context->ObjCIdTypedefType = GetType(Id);
+  }
+  
+  if (unsigned Sel = SpecialTypes[SPECIAL_TYPE_OBJC_SELECTOR]) {
+    if (Context->ObjCSelTypedefType.isNull())
+      Context->ObjCSelTypedefType = GetType(Sel);
+  }
+  
+  if (unsigned Proto = SpecialTypes[SPECIAL_TYPE_OBJC_PROTOCOL]) {
+    if (Context->ObjCProtoType.isNull())
+      Context->ObjCProtoType = GetType(Proto);
+  }
+  
+  if (unsigned Class = SpecialTypes[SPECIAL_TYPE_OBJC_CLASS]) {
+    if (Context->ObjCClassTypedefType.isNull()) 
+      Context->ObjCClassTypedefType = GetType(Class);
   }
 
-  // Load the translation unit declaration
-  GetTranslationUnitDecl();
-
-  // Load the special types.
-  Context->setBuiltinVaListType(
-    GetType(SpecialTypes[SPECIAL_TYPE_BUILTIN_VA_LIST]));
-  if (unsigned Id = SpecialTypes[SPECIAL_TYPE_OBJC_ID])
-    Context->setObjCIdType(GetType(Id));
-  if (unsigned Sel = SpecialTypes[SPECIAL_TYPE_OBJC_SELECTOR])
-    Context->setObjCSelType(GetType(Sel));
-  if (unsigned Proto = SpecialTypes[SPECIAL_TYPE_OBJC_PROTOCOL])
-    Context->setObjCProtoType(GetType(Proto));
-  if (unsigned Class = SpecialTypes[SPECIAL_TYPE_OBJC_CLASS])
-    Context->setObjCClassType(GetType(Class));
-
-  if (unsigned String = SpecialTypes[SPECIAL_TYPE_CF_CONSTANT_STRING])
-    Context->setCFConstantStringType(GetType(String));
-  if (unsigned FastEnum
-        = SpecialTypes[SPECIAL_TYPE_OBJC_FAST_ENUMERATION_STATE])
-    Context->setObjCFastEnumerationStateType(GetType(FastEnum));
+  if (unsigned String = SpecialTypes[SPECIAL_TYPE_CF_CONSTANT_STRING]) {
+    if (!Context->CFConstantStringTypeDecl)
+      Context->setCFConstantStringType(GetType(String));
+  }
+  
   if (unsigned File = SpecialTypes[SPECIAL_TYPE_FILE]) {
     QualType FileType = GetType(File);
     if (FileType.isNull()) {
       Error("FILE type is NULL");
       return;
     }
-    if (const TypedefType *Typedef = FileType->getAs<TypedefType>())
-      Context->setFILEDecl(Typedef->getDecl());
-    else {
-      const TagType *Tag = FileType->getAs<TagType>();
-      if (!Tag) {
-        Error("Invalid FILE type in AST file");
-        return;
+    
+    if (!Context->FILEDecl) {
+      if (const TypedefType *Typedef = FileType->getAs<TypedefType>())
+        Context->setFILEDecl(Typedef->getDecl());
+      else {
+        const TagType *Tag = FileType->getAs<TagType>();
+        if (!Tag) {
+          Error("Invalid FILE type in AST file");
+          return;
+        }
+        Context->setFILEDecl(Tag->getDecl());
       }
-      Context->setFILEDecl(Tag->getDecl());
     }
   }
+  
   if (unsigned Jmp_buf = SpecialTypes[SPECIAL_TYPE_jmp_buf]) {
     QualType Jmp_bufType = GetType(Jmp_buf);
     if (Jmp_bufType.isNull()) {
       Error("jmp_buf type is NULL");
       return;
     }
-    if (const TypedefType *Typedef = Jmp_bufType->getAs<TypedefType>())
-      Context->setjmp_bufDecl(Typedef->getDecl());
-    else {
-      const TagType *Tag = Jmp_bufType->getAs<TagType>();
-      if (!Tag) {
-        Error("Invalid jmp_buf type in AST file");
-        return;
+    
+    if (!Context->jmp_bufDecl) {
+      if (const TypedefType *Typedef = Jmp_bufType->getAs<TypedefType>())
+        Context->setjmp_bufDecl(Typedef->getDecl());
+      else {
+        const TagType *Tag = Jmp_bufType->getAs<TagType>();
+        if (!Tag) {
+          Error("Invalid jmp_buf type in AST file");
+          return;
+        }
+        Context->setjmp_bufDecl(Tag->getDecl());
       }
-      Context->setjmp_bufDecl(Tag->getDecl());
     }
   }
+  
   if (unsigned Sigjmp_buf = SpecialTypes[SPECIAL_TYPE_sigjmp_buf]) {
     QualType Sigjmp_bufType = GetType(Sigjmp_buf);
     if (Sigjmp_bufType.isNull()) {
       Error("sigjmp_buf type is NULL");
       return;
     }
-    if (const TypedefType *Typedef = Sigjmp_bufType->getAs<TypedefType>())
-      Context->setsigjmp_bufDecl(Typedef->getDecl());
-    else {
-      const TagType *Tag = Sigjmp_bufType->getAs<TagType>();
-      assert(Tag && "Invalid sigjmp_buf type in AST file");
-      Context->setsigjmp_bufDecl(Tag->getDecl());
+    
+    if (!Context->sigjmp_bufDecl) {
+      if (const TypedefType *Typedef = Sigjmp_bufType->getAs<TypedefType>())
+        Context->setsigjmp_bufDecl(Typedef->getDecl());
+      else {
+        const TagType *Tag = Sigjmp_bufType->getAs<TagType>();
+        assert(Tag && "Invalid sigjmp_buf type in AST file");
+        Context->setsigjmp_bufDecl(Tag->getDecl());
+      }
     }
   }
+
   if (unsigned ObjCIdRedef
-        = SpecialTypes[SPECIAL_TYPE_OBJC_ID_REDEFINITION])
-    Context->ObjCIdRedefinitionType = GetType(ObjCIdRedef);
+        = SpecialTypes[SPECIAL_TYPE_OBJC_ID_REDEFINITION]) {
+    if (Context->ObjCIdRedefinitionType.isNull())
+      Context->ObjCIdRedefinitionType = GetType(ObjCIdRedef);
+  }
+
   if (unsigned ObjCClassRedef
-      = SpecialTypes[SPECIAL_TYPE_OBJC_CLASS_REDEFINITION])
-    Context->ObjCClassRedefinitionType = GetType(ObjCClassRedef);
-  if (unsigned String = SpecialTypes[SPECIAL_TYPE_BLOCK_DESCRIPTOR])
-    Context->setBlockDescriptorType(GetType(String));
-  if (unsigned String
-      = SpecialTypes[SPECIAL_TYPE_BLOCK_EXTENDED_DESCRIPTOR])
-    Context->setBlockDescriptorExtendedType(GetType(String));
+        = SpecialTypes[SPECIAL_TYPE_OBJC_CLASS_REDEFINITION]) {
+    if (Context->ObjCClassRedefinitionType.isNull())
+      Context->ObjCClassRedefinitionType = GetType(ObjCClassRedef);
+  }
+
   if (unsigned ObjCSelRedef
-      = SpecialTypes[SPECIAL_TYPE_OBJC_SEL_REDEFINITION])
-    Context->ObjCSelRedefinitionType = GetType(ObjCSelRedef);
-  if (unsigned String = SpecialTypes[SPECIAL_TYPE_NS_CONSTANT_STRING])
-    Context->setNSConstantStringType(GetType(String));
+        = SpecialTypes[SPECIAL_TYPE_OBJC_SEL_REDEFINITION]) {
+    if (Context->ObjCSelRedefinitionType.isNull())
+      Context->ObjCSelRedefinitionType = GetType(ObjCSelRedef);
+  }
 
   if (SpecialTypes[SPECIAL_TYPE_INT128_INSTALLED])
     Context->setInt128Installed();
-
-  if (unsigned AutoDeduct = SpecialTypes[SPECIAL_TYPE_AUTO_DEDUCT])
-    Context->AutoDeductTy = GetType(AutoDeduct);
-  if (unsigned AutoRRefDeduct = SpecialTypes[SPECIAL_TYPE_AUTO_RREF_DEDUCT])
-    Context->AutoRRefDeductTy = GetType(AutoRRefDeduct);
 
   ReadPragmaDiagnosticMappings(Context->getDiagnostics());
 
@@ -4045,6 +4088,11 @@ QualType ASTReader::GetType(TypeID ID) {
     case PREDEF_TYPE_OBJC_ID:       T = Context->ObjCBuiltinIdTy;    break;
     case PREDEF_TYPE_OBJC_CLASS:    T = Context->ObjCBuiltinClassTy; break;
     case PREDEF_TYPE_OBJC_SEL:      T = Context->ObjCBuiltinSelTy;   break;
+    case PREDEF_TYPE_AUTO_DEDUCT:   T = Context->getAutoDeductType(); break;
+        
+    case PREDEF_TYPE_AUTO_RREF_DEDUCT: 
+      T = Context->getAutoRRefDeductType(); 
+      break;
     }
 
     assert(!T.isNull() && "Unknown predefined type");
@@ -4171,21 +4219,6 @@ CXXBaseSpecifier *ASTReader::GetExternalCXXBaseSpecifiers(uint64_t Offset) {
   return Bases;
 }
 
-TranslationUnitDecl *ASTReader::GetTranslationUnitDecl() {
-  // FIXME: This routine might not even make sense when we're loading multiple
-  // unrelated AST files, since we'll have to merge the translation units
-  // somehow.
-  unsigned TranslationUnitID = (*(ModuleMgr.end() - 1))->BaseDeclID + 1;
-  if (!DeclsLoaded[TranslationUnitID - 1]) {
-    ReadDeclRecord(TranslationUnitID);
-    if (DeserializationListener)
-      DeserializationListener->DeclRead(TranslationUnitID, 
-                                        DeclsLoaded[TranslationUnitID - 1]);
-  }
-
-  return cast<TranslationUnitDecl>(DeclsLoaded[TranslationUnitID - 1]);
-}
-
 serialization::DeclID 
 ASTReader::getGlobalDeclID(Module &F, unsigned LocalID) const {
   if (LocalID < NUM_PREDEF_DECL_IDS)
@@ -4201,20 +4234,25 @@ ASTReader::getGlobalDeclID(Module &F, unsigned LocalID) const {
 Decl *ASTReader::GetDecl(DeclID ID) {
   if (ID < NUM_PREDEF_DECL_IDS) {    
     switch ((PredefinedDeclIDs)ID) {
-    case serialization::PREDEF_DECL_NULL_ID:
+    case PREDEF_DECL_NULL_ID:
       return 0;
+        
+    case PREDEF_DECL_TRANSLATION_UNIT_ID:
+      assert(Context && "No context available?");
+      return Context->getTranslationUnitDecl();
     }
     
     return 0;
   }
   
-  if (ID > DeclsLoaded.size()) {
+  unsigned Index = ID - NUM_PREDEF_DECL_IDS;
+
+  if (Index > DeclsLoaded.size()) {
     Error("declaration ID out-of-range for AST file");
     return 0;
   }
-
-  unsigned Index = ID - NUM_PREDEF_DECL_IDS;
-  if (!DeclsLoaded[Index]) {
+  
+if (!DeclsLoaded[Index]) {
     ReadDeclRecord(ID);
     if (DeserializationListener)
       DeserializationListener->DeclRead(ID, DeclsLoaded[Index]);
@@ -4292,7 +4330,10 @@ ASTReader::FindExternalVisibleDeclsByName(const DeclContext *DC,
   // There might be visible decls in multiple parts of the chain, for the TU
   // and namespaces. For any given name, the last available results replace
   // all earlier ones. For this reason, we walk in reverse.
-  DeclContextInfos &Infos = DeclContextOffsets[DC];
+  // Copy the DeclContextInfos vector instead of using a reference to the
+  // vector stored in the map, because DeclContextOffsets can change while
+  // we load declarations with GetLocalDeclAs.
+  DeclContextInfos Infos = DeclContextOffsets[DC];
   for (DeclContextInfos::reverse_iterator I = Infos.rbegin(), E = Infos.rend();
        I != E; ++I) {
     if (!I->NameLookupTableData)
@@ -5648,7 +5689,7 @@ void Module::dump() {
   
   llvm::errs() << "  Base preprocessed entity ID: " << BasePreprocessedEntityID
                << '\n'  
-               << "Number of preprocessed entities: " 
+               << "  Number of preprocessed entities: " 
                << NumPreallocatedPreprocessingEntities << '\n';
   dumpLocalRemap("Preprocessed entity ID local -> global map", 
                  PreprocessedEntityRemap);

@@ -322,6 +322,7 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
   //   A glvalue of a non-function, non-array type T can be
   //   converted to a prvalue.
   if (!E->isGLValue()) return Owned(E);
+
   QualType T = E->getType();
   assert(!T.isNull() && "r-value conversion on typeless expression?");
 
@@ -364,8 +365,6 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
   //   type of the lvalue.    
   if (T.hasQualifiers())
     T = T.getUnqualifiedType();
-
-  CheckArrayAccess(E);
   
   return Owned(ImplicitCastExpr::Create(Context, T, CK_LValueToRValue,
                                         E, 0, VK_RValue));
@@ -1458,14 +1457,15 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
         for (TypoCorrection::decl_iterator CD = Corrected.begin(),
                                         CDEnd = Corrected.end();
              CD != CDEnd; ++CD) {
-          if (FunctionDecl *FD = dyn_cast<FunctionDecl>(*CD))
-            AddOverloadCandidate(FD, DeclAccessPair::make(FD, AS_none),
-                                 Args, NumArgs, OCS);
-          else if (FunctionTemplateDecl *FTD =
+          if (FunctionTemplateDecl *FTD =
                    dyn_cast<FunctionTemplateDecl>(*CD))
             AddTemplateOverloadCandidate(
                 FTD, DeclAccessPair::make(FTD, AS_none), ExplicitTemplateArgs,
                 Args, NumArgs, OCS);
+          else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(*CD))
+            if (!ExplicitTemplateArgs || ExplicitTemplateArgs->size() == 0)
+              AddOverloadCandidate(FD, DeclAccessPair::make(FD, AS_none),
+                                   Args, NumArgs, OCS);
         }
         switch (OCS.BestViableFunction(*this, R.getNameLoc(), Best)) {
           case OR_Success:
@@ -3593,6 +3593,12 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc,
 
       Arg = ArgExpr.takeAs<Expr>();
     }
+
+    // Check for array bounds violations for each argument to the call. This
+    // check only triggers warnings when the argument isn't a more complex Expr
+    // with its own checking, such as a BinaryOperator.
+    CheckArrayAccess(Arg);
+
     AllArgs.push_back(Arg);
   }
 
@@ -4947,34 +4953,34 @@ QualType Sema::FindCompositeObjCPointerType(ExprResult &LHS, ExprResult &RHS,
   // to the pseudo-builtin, because that will be implicitly cast back to the
   // redefinition type if an attempt is made to access its fields.
   if (LHSTy->isObjCClassType() &&
-      (Context.hasSameType(RHSTy, Context.ObjCClassRedefinitionType))) {
+      (Context.hasSameType(RHSTy, Context.getObjCClassRedefinitionType()))) {
     RHS = ImpCastExprToType(RHS.take(), LHSTy, CK_BitCast);
     return LHSTy;
   }
   if (RHSTy->isObjCClassType() &&
-      (Context.hasSameType(LHSTy, Context.ObjCClassRedefinitionType))) {
+      (Context.hasSameType(LHSTy, Context.getObjCClassRedefinitionType()))) {
     LHS = ImpCastExprToType(LHS.take(), RHSTy, CK_BitCast);
     return RHSTy;
   }
   // And the same for struct objc_object* / id
   if (LHSTy->isObjCIdType() &&
-      (Context.hasSameType(RHSTy, Context.ObjCIdRedefinitionType))) {
+      (Context.hasSameType(RHSTy, Context.getObjCIdRedefinitionType()))) {
     RHS = ImpCastExprToType(RHS.take(), LHSTy, CK_BitCast);
     return LHSTy;
   }
   if (RHSTy->isObjCIdType() &&
-      (Context.hasSameType(LHSTy, Context.ObjCIdRedefinitionType))) {
+      (Context.hasSameType(LHSTy, Context.getObjCIdRedefinitionType()))) {
     LHS = ImpCastExprToType(LHS.take(), RHSTy, CK_BitCast);
     return RHSTy;
   }
   // And the same for struct objc_selector* / SEL
   if (Context.isObjCSelType(LHSTy) &&
-      (Context.hasSameType(RHSTy, Context.ObjCSelRedefinitionType))) {
+      (Context.hasSameType(RHSTy, Context.getObjCSelRedefinitionType()))) {
     RHS = ImpCastExprToType(RHS.take(), LHSTy, CK_BitCast);
     return LHSTy;
   }
   if (Context.isObjCSelType(RHSTy) &&
-      (Context.hasSameType(LHSTy, Context.ObjCSelRedefinitionType))) {
+      (Context.hasSameType(LHSTy, Context.getObjCSelRedefinitionType()))) {
     LHS = ImpCastExprToType(LHS.take(), RHSTy, CK_BitCast);
     return RHSTy;
   }
@@ -5559,7 +5565,8 @@ Sema::CheckAssignmentConstraints(QualType lhsType, ExprResult &rhs,
 
       //  - conversions from 'Class' to the redefinition type
       if (rhsType->isObjCClassType() &&
-          Context.hasSameType(lhsType, Context.ObjCClassRedefinitionType)) {
+          Context.hasSameType(lhsType, 
+                              Context.getObjCClassRedefinitionType())) {
         Kind = CK_BitCast;
         return Compatible;
       }
@@ -5640,7 +5647,8 @@ Sema::CheckAssignmentConstraints(QualType lhsType, ExprResult &rhs,
 
       //  - conversions to 'Class' from its redefinition type
       if (lhsType->isObjCClassType() &&
-          Context.hasSameType(rhsType, Context.ObjCClassRedefinitionType)) {
+          Context.hasSameType(rhsType, 
+                              Context.getObjCClassRedefinitionType())) {
         Kind = CK_BitCast;
         return Compatible;
       }
@@ -6171,6 +6179,9 @@ QualType Sema::CheckAdditionOperands( // C99 6.5.6
         return QualType();
       }
 
+      // Check array bounds for pointer arithemtic
+      CheckArrayAccess(PExp, IExp);
+
       if (CompLHSTy) {
         QualType LHSTy = Context.isPromotableBitField(lex.get());
         if (LHSTy.isNull()) {
@@ -6226,6 +6237,12 @@ QualType Sema::CheckSubtractionOperands(ExprResult &lex, ExprResult &rex,
     if (rex.get()->getType()->isIntegerType()) {
       if (!checkArithmeticOpPointerOperand(*this, Loc, lex.get()))
         return QualType();
+
+      Expr *IExpr = rex.get()->IgnoreParenCasts();
+      UnaryOperator negRex(IExpr, UO_Minus, IExpr->getType(), VK_RValue,
+                           OK_Ordinary, IExpr->getExprLoc());
+      // Check array bounds for pointer arithemtic
+      CheckArrayAccess(lex.get()->IgnoreParenCasts(), &negRex);
 
       if (CompLHSTy) *CompLHSTy = lex.get()->getType();
       return lex.get()->getType();
@@ -7220,9 +7237,7 @@ QualType Sema::CheckAssignmentOperands(Expr *LHS, ExprResult &RHS,
     return QualType();
 
   CheckForNullPointerDereference(*this, LHS);
-  // Check for trivial buffer overflows.
-  CheckArrayAccess(LHS->IgnoreParenCasts());
-  
+
   // C99 6.5.16p3: The type of an assignment expression is the type of the
   // left operand unless the left operand has qualified type, in which case
   // it is the unqualified version of the type of the left operand.
@@ -7849,9 +7864,10 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
             !LeftType->canDecayToPointerType() &&
             !RightType->isAnyPointerType() &&
             !RightType->canDecayToPointerType()) {
-          Diag(OpLoc, diag::warn_null_in_arithmetic_operation)
-            << (LeftNull ? lhs.get()->getSourceRange()
-                         : rhs.get()->getSourceRange());
+          Diag(OpLoc, diag::warn_null_in_comparison_operation)
+            << LeftNull /* LHS is NULL */
+            << (LeftNull ? rhs.get()->getType() : lhs.get()->getType())
+            << lhs.get()->getSourceRange() << rhs.get()->getSourceRange();
         }
       }
     }
@@ -7959,6 +7975,11 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
   }
   if (ResultTy.isNull() || lhs.isInvalid() || rhs.isInvalid())
     return ExprError();
+
+  // Check for array bounds violations for both sides of the BinaryOperator
+  CheckArrayAccess(lhs.get());
+  CheckArrayAccess(rhs.get());
+
   if (CompResultTy.isNull())
     return Owned(new (Context) BinaryOperator(lhs.take(), rhs.take(), Opc,
                                               ResultTy, VK, OK, OpLoc));
@@ -7996,32 +8017,28 @@ static void DiagnoseBitwisePrecedence(Sema &Self, BinaryOperatorKind Opc,
       (BinOp::isComparisonOp(rhsopc) || BinOp::isBitwiseOp(rhsopc)))
     return;
 
-  if (BinOp::isComparisonOp(lhsopc)) {
-    Self.Diag(OpLoc, diag::warn_precedence_bitwise_rel)
-        << SourceRange(lhs->getLocStart(), OpLoc)
-        << BinOp::getOpcodeStr(Opc) << BinOp::getOpcodeStr(lhsopc);
-    SuggestParentheses(Self, OpLoc,
-      Self.PDiag(diag::note_precedence_bitwise_silence)
-          << BinOp::getOpcodeStr(lhsopc),
-      lhs->getSourceRange());
-    SuggestParentheses(Self, OpLoc,
-      Self.PDiag(diag::note_precedence_bitwise_first)
-          << BinOp::getOpcodeStr(Opc),
-      SourceRange(cast<BinOp>(lhs)->getRHS()->getLocStart(), rhs->getLocEnd()));
-  } else if (BinOp::isComparisonOp(rhsopc)) {
-    Self.Diag(OpLoc, diag::warn_precedence_bitwise_rel)
-        << SourceRange(OpLoc, rhs->getLocEnd())
-        << BinOp::getOpcodeStr(Opc) << BinOp::getOpcodeStr(rhsopc);
-    SuggestParentheses(Self, OpLoc,
-      Self.PDiag(diag::note_precedence_bitwise_silence)
-          << BinOp::getOpcodeStr(rhsopc),
-      rhs->getSourceRange());
-    SuggestParentheses(Self, OpLoc,
-      Self.PDiag(diag::note_precedence_bitwise_first)
-        << BinOp::getOpcodeStr(Opc),
-      SourceRange(lhs->getLocStart(), 
-                  cast<BinOp>(rhs)->getLHS()->getLocStart()));
-  }
+  bool isLeftComp = BinOp::isComparisonOp(lhsopc);
+  bool isRightComp = BinOp::isComparisonOp(rhsopc);
+  if (!isLeftComp && !isRightComp) return;
+
+  SourceRange DiagRange = isLeftComp ? SourceRange(lhs->getLocStart(), OpLoc)
+                                     : SourceRange(OpLoc, rhs->getLocEnd());
+  std::string OpStr = isLeftComp ? BinOp::getOpcodeStr(lhsopc)
+                                 : BinOp::getOpcodeStr(rhsopc);
+  SourceRange ParensRange = isLeftComp ?
+      SourceRange(cast<BinOp>(lhs)->getRHS()->getLocStart(),
+                  rhs->getLocEnd())
+    : SourceRange(lhs->getLocStart(),
+                  cast<BinOp>(rhs)->getLHS()->getLocStart());
+
+  Self.Diag(OpLoc, diag::warn_precedence_bitwise_rel)
+    << DiagRange << BinOp::getOpcodeStr(Opc) << OpStr;
+  SuggestParentheses(Self, OpLoc,
+    Self.PDiag(diag::note_precedence_bitwise_silence) << OpStr,
+    rhs->getSourceRange());
+  SuggestParentheses(Self, OpLoc,
+    Self.PDiag(diag::note_precedence_bitwise_first) << BinOp::getOpcodeStr(Opc),
+    ParensRange);
 }
 
 /// \brief It accepts a '&' expr that is inside a '|' one.
@@ -8312,6 +8329,13 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
   }
   if (resultType.isNull() || Input.isInvalid())
     return ExprError();
+
+  // Check for array bounds violations in the operand of the UnaryOperator,
+  // except for the '*' and '&' operators that have to be handled specially
+  // by CheckArrayAccess (as there are special cases like &array[arraysize]
+  // that are explicitly defined as valid by the standard).
+  if (Opc != UO_AddrOf && Opc != UO_Deref)
+    CheckArrayAccess(Input.get());
 
   return Owned(new (Context) UnaryOperator(Input.take(), Opc, resultType,
                                            VK, OK, OpLoc));
@@ -10036,9 +10060,19 @@ ExprResult RebuildUnknownAnyExpr::resolveDecl(Expr *expr, ValueDecl *decl) {
 
   //  - functions
   if (FunctionDecl *fn = dyn_cast<FunctionDecl>(decl)) {
-    // This is true because FunctionDecls must always have function
-    // type, so we can't be resolving the entire thing at once.
-    assert(type->isFunctionType());
+    if (const PointerType *ptr = type->getAs<PointerType>()) {
+      DestType = ptr->getPointeeType();
+      ExprResult result = resolveDecl(expr, decl);
+      if (result.isInvalid()) return ExprError();
+      return S.ImpCastExprToType(result.take(), type,
+                                 CK_FunctionToPointerDecay, VK_RValue);
+    }
+
+    if (!type->isFunctionType()) {
+      S.Diag(expr->getExprLoc(), diag::err_unknown_any_function)
+        << decl << expr->getSourceRange();
+      return ExprError();
+    }
 
     if (CXXMethodDecl *method = dyn_cast<CXXMethodDecl>(fn))
       if (method->isInstance()) {

@@ -383,32 +383,72 @@ def note_undef_method_impl : Note<"method definition for %0 not found">;
 def note_required_for_protocol_at : 
   Note<"required for direct or indirect protocol %0">;
 
+def warn_conflicting_overriding_ret_types : Warning<
+  "conflicting return type in "
+  "declaration of %0: %1 vs %2">,
+  InGroup<OverridingMethodMismatch>, DefaultIgnore;
+
 def warn_conflicting_ret_types : Warning<
   "conflicting return type in "
-  "%select{implementation|declaration}3 of %0: %1 vs %2">;
+  "implementation of %0: %1 vs %2">;
+
+def warn_conflicting_overriding_ret_type_modifiers : Warning<
+  "conflicting distributed object modifiers on return type "
+  "in declaration of %0">,
+  InGroup<OverridingMethodMismatch>, DefaultIgnore;
+
 def warn_conflicting_ret_type_modifiers : Warning<
   "conflicting distributed object modifiers on return type "
-  "in %select{implementation|declaration}1 of %0">,
+  "in implementation of %0">,
   InGroup<DiagGroup<"distributed-object-modifiers">>;
+
+def warn_non_covariant_overriding_ret_types : Warning<
+  "conflicting return type in "
+  "declaration of %0: %1 vs %2">,
+  InGroup<OverridingMethodMismatch>, DefaultIgnore;
+
 def warn_non_covariant_ret_types : Warning<
   "conflicting return type in "
-  "%select{implementation|declaration}3 of %0: %1 vs %2">,
+  "implementation of %0: %1 vs %2">,
   InGroup<DiagGroup<"method-signatures">>, DefaultIgnore;
+
+def warn_conflicting_overriding_param_types : Warning<
+  "conflicting parameter types in "
+  "declaration of %0: %1 vs %2">,
+  InGroup<OverridingMethodMismatch>, DefaultIgnore;
 
 def warn_conflicting_param_types : Warning<
   "conflicting parameter types in "
-  "%select{implementation|declaration}3 of %0: %1 vs %2">;
+  "implementation of %0: %1 vs %2">;
 def warn_conflicting_param_modifiers : Warning<
   "conflicting distributed object modifiers on parameter type "
-  "in %select{implementation|declaration}1 of %0">,
+  "in implementation of %0">,
   InGroup<DiagGroup<"distributed-object-modifiers">>;
+
+def warn_conflicting_overriding_param_modifiers : Warning<
+  "conflicting distributed object modifiers on parameter type "
+  "in declaration of %0">,
+  InGroup<OverridingMethodMismatch>, DefaultIgnore;
+
+def warn_non_contravariant_overriding_param_types : Warning<
+  "conflicting parameter types in "
+  "declaration of %0: %1 vs %2">,
+  InGroup<OverridingMethodMismatch>, DefaultIgnore;
+
 def warn_non_contravariant_param_types : Warning<
   "conflicting parameter types in "
-  "%select{implementation|declaration}3 of %0: %1 vs %2">,
+  "implementation of %0: %1 vs %2">,
   InGroup<DiagGroup<"method-signatures">>, DefaultIgnore;
+
+def warn_conflicting_overriding_variadic :Warning<
+  "conflicting variadic declaration of method and its "
+  "implementation">,
+  InGroup<OverridingMethodMismatch>, DefaultIgnore;
+
 def warn_conflicting_variadic :Warning<
   "conflicting variadic declaration of method and its "
-  "%select{implementation|declaration}0">;
+  "implementation">;
+
 def warn_category_method_impl_match:Warning<
   "category is implementing a method which will also be implemented"
   " by its primary class">, InGroup<ObjCProtocolMethodImpl>;
@@ -497,7 +537,8 @@ def error_synthesize_weak_non_arc_or_gc : Error<
 def err_arc_perform_selector_retains : Error<
   "performSelector names a selector which retains the object">;
 def warn_arc_perform_selector_leaks : Warning<
-  "performSelector may cause a leak because its selector is unknown">;
+  "performSelector may cause a leak because its selector is unknown">,
+  InGroup<DiagGroup<"arc-performSelector-leaks">>;
 
 def error_synthesized_ivar_yet_not_supported : Error<
   "instance variable synthesis not yet supported"
@@ -1141,6 +1182,10 @@ def err_attribute_bad_neon_vector_size : Error<
   "Neon vector size must be 64 or 128 bits">;
 def err_attribute_argument_not_int : Error<
   "'%0' attribute requires integer constant">;
+def err_attribute_argument_not_class : Error<
+  "%0 attribute requires arguments that are class type or point to class type">;
+def err_attribute_first_argument_not_int_or_bool : Error<
+  "%0 attribute first argument must be of int or bool type">;
 def err_attribute_argument_outof_range : Error<
   "init_priority attribute requires integer constant between "
   "101 and 65535 inclusive">;
@@ -1299,6 +1344,21 @@ def warn_availability_version_ordering : Warning<
   "feature cannot be %select{introduced|deprecated|obsoleted}0 in %1 version "
   "%2 before it was %select{introduced|deprecated|obsoleted}3 in version %4; "
   "attribute ignored">;
+  
+// Thread Safety Attributes
+// Errors when parsing the attributes
+def err_attribute_argument_out_of_range : Error<
+  "%0 attribute parameter %1 is out of bounds: "
+  "%plural{0:no parameters to index into|"
+  "1:can only be 1, since there is one parameter|"
+  ":must be between 1 and %2}2">;
+def err_attribute_argument_not_lockable : Error<
+  "%0 attribute requires arguments whose type is annotated "
+  "with 'lockable' attribute">;
+def err_attribute_decl_not_lockable : Error<
+  "%0 attribute can only be applied in a context annotated "
+  "with 'lockable' attribute">;
+
 
 def warn_impcast_vector_scalar : Warning<
   "implicit conversion turns vector to scalar: %0 to %1">,
@@ -3103,6 +3163,10 @@ def warn_comparison_of_mixed_enum_types : Warning<
 def warn_null_in_arithmetic_operation : Warning<
   "use of NULL in arithmetic operation">,
   InGroup<DiagGroup<"null-arithmetic">>;
+def warn_null_in_comparison_operation : Warning<
+  "comparison between NULL and non-pointer "
+  "%select{(%1 and NULL)|(NULL and %1)}0">,
+  InGroup<DiagGroup<"null-arithmetic">>;
 
 def err_invalid_this_use : Error<
   "invalid use of 'this' outside of a nonstatic member function">;
@@ -4085,13 +4149,19 @@ def err_out_of_line_default_deletes : Error<
 def err_defaulted_move_unsupported : Error<
   "defaulting move functions not yet supported">;
 
+def warn_ptr_arith_precedes_bounds : Warning<
+  "the pointer decremented by %0 refers before the beginning of the array">,
+  InGroup<DiagGroup<"array-bounds-pointer-arithmetic">>, DefaultIgnore;
+def warn_ptr_arith_exceeds_bounds : Warning<
+  "the pointer incremented by %0 refers past the end of the array (that "
+  "contains %1 element%s2)">,
+  InGroup<DiagGroup<"array-bounds-pointer-arithmetic">>, DefaultIgnore;
 def warn_array_index_precedes_bounds : Warning<
   "array index of '%0' indexes before the beginning of the array">,
   InGroup<DiagGroup<"array-bounds">>;
 def warn_array_index_exceeds_bounds : Warning<
   "array index of '%0' indexes past the end of an array (that contains %1 "
-  "%select{element|elements}2)">,
-  InGroup<DiagGroup<"array-bounds">>;
+  "element%s2)">, InGroup<DiagGroup<"array-bounds">>;
 def note_array_index_out_of_bounds : Note<
   "array %0 declared here">;
 
@@ -4476,6 +4546,8 @@ def err_unknown_any_addrof : Error<
   "can only be cast to a pointer type">;
 def err_unknown_any_var_function_type : Error<
   "variable %0 with unknown type cannot be given a function type">;
+def err_unknown_any_function : Error<
+  "function %0 with unknown type must be given a function type">;
 
 def err_filter_expression_integral : Error<
   "filter expression type should be an integral value not %0">;

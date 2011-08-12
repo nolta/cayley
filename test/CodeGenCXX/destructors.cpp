@@ -237,7 +237,6 @@ namespace test5 {
   // CHECK:      [[ELEMS:%.*]] = alloca [5 x [[A:%.*]]], align
   // CHECK-NEXT: [[EXN:%.*]] = alloca i8*
   // CHECK-NEXT: [[SEL:%.*]] = alloca i32
-  // CHECK-NEXT: [[EHCLEANUP:%.*]] = alloca i32
   // CHECK-NEXT: [[BEGIN:%.*]] = getelementptr inbounds [5 x [[A]]]* [[ELEMS]], i32 0, i32 0
   // CHECK-NEXT: [[END:%.*]] = getelementptr inbounds [[A]]* [[BEGIN]], i64 5
   // CHECK-NEXT: br label
@@ -323,7 +322,32 @@ namespace test7 {
   // CHECK:   invoke void @_ZN5test71DD1Ev(
   // CHECK:   call void @_ZN5test71AD2Ev(
   B::~B() {}
+}
 
+// PR10467
+namespace test8 {
+  struct A { A(); ~A(); };
+
+  void die() __attribute__((noreturn));
+  void test() {
+    A x;
+    while (1) {
+      A y;
+      goto l;
+    }
+  l: die();
+  }
+
+  // CHECK:    define void @_ZN5test84testEv()
+  // CHECK:      [[X:%.*]] = alloca [[A:%.*]], align 1
+  // CHECK-NEXT: [[Y:%.*]] = alloca [[A:%.*]], align 1
+  // CHECK:      call void @_ZN5test81AC1Ev([[A]]* [[X]])
+  // CHECK-NEXT: br label
+  // CHECK:      invoke void @_ZN5test81AC1Ev([[A]]* [[Y]])
+  // CHECK:      invoke void @_ZN5test81AD1Ev([[A]]* [[Y]])
+  // CHECK-NOT:  switch
+  // CHECK:      invoke void @_ZN5test83dieEv()
+  // CHECK:      unreachable
 }
 
 // Checks from test3:

@@ -91,8 +91,9 @@ public:
 };
 
 typedef const SymbolData* SymbolRef;
+typedef llvm::SmallVector<SymbolRef, 2> SymbolRefSmallVectorTy;
 
-// A symbol representing the value of a MemRegion.
+/// A symbol representing the value of a MemRegion.
 class SymbolRegionValue : public SymbolData {
   const TypedRegion *R;
 
@@ -121,7 +122,7 @@ public:
   }
 };
 
-// A symbol representing the result of an expression.
+/// A symbol representing the result of an expression.
 class SymbolConjured : public SymbolData {
   const Stmt* S;
   QualType T;
@@ -161,8 +162,8 @@ public:
   }
 };
 
-// A symbol representing the value of a MemRegion whose parent region has 
-// symbolic value.
+/// A symbol representing the value of a MemRegion whose parent region has
+/// symbolic value.
 class SymbolDerived : public SymbolData {
   SymbolRef parentSymbol;
   const TypedRegion *R;
@@ -271,7 +272,7 @@ public:
   }
 };
 
-// SymIntExpr - Represents symbolic expression like 'x' + 3.
+/// SymIntExpr - Represents symbolic expression like 'x' + 3.
 class SymIntExpr : public SymExpr {
   const SymExpr *LHS;
   BinaryOperator::Opcode Op;
@@ -314,7 +315,7 @@ public:
   }
 };
 
-// SymSymExpr - Represents symbolic expression like 'x' + 'y'.
+/// SymSymExpr - Represents symbolic expression like 'x' + 'y'.
 class SymSymExpr : public SymExpr {
   const SymExpr *LHS;
   BinaryOperator::Opcode Op;
@@ -357,7 +358,12 @@ public:
 
 class SymbolManager {
   typedef llvm::FoldingSet<SymExpr> DataSetTy;
+  typedef llvm::DenseMap<SymbolRef, SymbolRefSmallVectorTy*> SymbolDependTy;
+
   DataSetTy DataSet;
+  /// Stores the extra dependencies between symbols: the data should be kept
+  /// alive as long as the key is live.
+  SymbolDependTy SymbolDependencies;
   unsigned SymbolCounter;
   llvm::BumpPtrAllocator& BPAlloc;
   BasicValueFactory &BV;
@@ -366,13 +372,14 @@ class SymbolManager {
 public:
   SymbolManager(ASTContext& ctx, BasicValueFactory &bv,
                 llvm::BumpPtrAllocator& bpalloc)
-    : SymbolCounter(0), BPAlloc(bpalloc), BV(bv), Ctx(ctx) {}
+    : SymbolDependencies(16), SymbolCounter(0),
+      BPAlloc(bpalloc), BV(bv), Ctx(ctx) {}
 
   ~SymbolManager();
 
   static bool canSymbolicate(QualType T);
 
-  /// Make a unique symbol for MemRegion R according to its kind.
+  /// \brief Make a unique symbol for MemRegion R according to its kind.
   const SymbolRegionValue* getRegionValueSymbol(const TypedRegion* R);
 
   const SymbolConjured* getConjuredSymbol(const Stmt* E, QualType T,
@@ -389,6 +396,10 @@ public:
 
   const SymbolExtent *getExtentSymbol(const SubRegion *R);
 
+  /// \brief Creates a metadata symbol associated with a specific region.
+  ///
+  /// VisitCount can be used to differentiate regions corresponding to
+  /// different loop iterations, thus, making the symbol path-dependent.
   const SymbolMetadata* getMetadataSymbol(const MemRegion* R, const Stmt* S,
                                           QualType T, unsigned VisitCount,
                                           const void* SymbolTag = 0);
@@ -408,16 +419,33 @@ public:
     return SE->getType(Ctx);
   }
 
+  /// \brief Add artificial symbol dependency.
+  ///
+  /// The dependent symbol should stay alive as long as the primary is alive.
+  void addSymbolDependency(const SymbolRef Primary, const SymbolRef Dependent);
+
+  const SymbolRefSmallVectorTy *getDependentSymbols(const SymbolRef Primary);
+
   ASTContext &getContext() { return Ctx; }
   BasicValueFactory &getBasicVals() { return BV; }
 };
 
 class SymbolReaper {
-  typedef llvm::DenseSet<SymbolRef> SetTy;
+  enum SymbolStatus {
+    NotProcessed,
+    HaveMarkedDependents
+  };
 
-  SetTy TheLiving;
-  SetTy MetadataInUse;
-  SetTy TheDead;
+  typedef llvm::DenseSet<SymbolRef> SymbolSetTy;
+  typedef llvm::DenseMap<SymbolRef, SymbolStatus> SymbolMapTy;
+  typedef llvm::DenseSet<const MemRegion *> RegionSetTy;
+
+  SymbolMapTy TheLiving;
+  SymbolSetTy MetadataInUse;
+  SymbolSetTy TheDead;
+
+  RegionSetTy RegionRoots;
+  
   const LocationContext *LCtx;
   const Stmt *Loc;
   SymbolManager& SymMgr;
@@ -435,52 +463,71 @@ public:
   const Stmt *getCurrentStatement() const { return Loc; }
 
   bool isLive(SymbolRef sym);
+  bool isLiveRegion(const MemRegion *region);
   bool isLive(const Stmt *ExprVal) const;
   bool isLive(const VarRegion *VR, bool includeStoreBindings = false) const;
 
-  // markLive - Unconditionally marks a symbol as live. This should never be
-  //  used by checkers, only by the state infrastructure such as the store and
-  //  environment. Checkers should instead use metadata symbols and markInUse.
+  /// \brief Unconditionally marks a symbol as live.
+  ///
+  /// This should never be
+  /// used by checkers, only by the state infrastructure such as the store and
+  /// environment. Checkers should instead use metadata symbols and markInUse.
   void markLive(SymbolRef sym);
 
-  // markInUse - Marks a symbol as important to a checker. For metadata symbols,
-  //  this will keep the symbol alive as long as its associated region is also
-  //  live. For other symbols, this has no effect; checkers are not permitted
-  //  to influence the life of other symbols. This should be used before any
-  //  symbol marking has occurred, i.e. in the MarkLiveSymbols callback.
+  /// \brief Marks a symbol as important to a checker.
+  ///
+  /// For metadata symbols,
+  /// this will keep the symbol alive as long as its associated region is also
+  /// live. For other symbols, this has no effect; checkers are not permitted
+  /// to influence the life of other symbols. This should be used before any
+  /// symbol marking has occurred, i.e. in the MarkLiveSymbols callback.
   void markInUse(SymbolRef sym);
 
-  // maybeDead - If a symbol is known to be live, marks the symbol as live.
-  //  Otherwise, if the symbol cannot be proven live, it is marked as dead.
-  //  Returns true if the symbol is dead, false if live.
+  /// \brief If a symbol is known to be live, marks the symbol as live.
+  ///
+  ///  Otherwise, if the symbol cannot be proven live, it is marked as dead.
+  ///  Returns true if the symbol is dead, false if live.
   bool maybeDead(SymbolRef sym);
 
-  typedef SetTy::const_iterator dead_iterator;
+  typedef SymbolSetTy::const_iterator dead_iterator;
   dead_iterator dead_begin() const { return TheDead.begin(); }
   dead_iterator dead_end() const { return TheDead.end(); }
 
   bool hasDeadSymbols() const {
     return !TheDead.empty();
   }
+  
+  typedef RegionSetTy::const_iterator region_iterator;
+  region_iterator region_begin() const { return RegionRoots.begin(); }
+  region_iterator region_end() const { return RegionRoots.end(); }
 
-  /// isDead - Returns whether or not a symbol has been confirmed dead. This
-  ///  should only be called once all marking of dead symbols has completed.
-  ///  (For checkers, this means only in the evalDeadSymbols callback.)
+  /// \brief Returns whether or not a symbol has been confirmed dead.
+  ///
+  /// This should only be called once all marking of dead symbols has completed.
+  /// (For checkers, this means only in the evalDeadSymbols callback.)
   bool isDead(SymbolRef sym) const {
     return TheDead.count(sym);
   }
   
-  /// Set to the value of the symbolic store after
+  void markLive(const MemRegion *region);
+  
+  /// \brief Set to the value of the symbolic store after
   /// StoreManager::removeDeadBindings has been called.
   void setReapedStore(StoreRef st) { reapedStore = st; }
+
+private:
+  /// Mark the symbols dependent on the input symbol as live.
+  void markDependentsLive(SymbolRef sym);
 };
 
 class SymbolVisitor {
 public:
-  // VisitSymbol - A visitor method invoked by
-  //  GRStateManager::scanReachableSymbols.  The method returns \c true if
-  //  symbols should continue be scanned and \c false otherwise.
+  /// \brief A visitor method invoked by GRStateManager::scanReachableSymbols.
+  ///
+  /// The method returns \c true if symbols should continue be scanned and \c
+  /// false otherwise.
   virtual bool VisitSymbol(SymbolRef sym) = 0;
+  virtual bool VisitMemRegion(const MemRegion *region) { return true; }
   virtual ~SymbolVisitor();
 };
 

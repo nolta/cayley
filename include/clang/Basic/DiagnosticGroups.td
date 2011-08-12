@@ -187,6 +187,7 @@ def Selector : DiagGroup<"selector">;
 def NonfragileAbi2 : DiagGroup<"nonfragile-abi2">;
 def Protocol : DiagGroup<"protocol">;
 def SuperSubClassMismatch : DiagGroup<"super-class-method-mismatch">;
+def OverridingMethodMismatch : DiagGroup<"overriding-method-mismatch">;
 def : DiagGroup<"variadic-macros">;
 def VariadicMacros : DiagGroup<"variadic-macros">;
 def VectorConversions : DiagGroup<"vector-conversions">;      // clang specific
@@ -273,6 +274,9 @@ def Most : DiagGroup<"most", [
     VolatileRegisterVar,
     OverloadedVirtual
  ]>;
+
+// Thread Safety warnings 
+def : DiagGroup<"thread-safety">;
 
 // -Wall is -Wmost -Wparentheses
 def : DiagGroup<"all", [Most, Parentheses]>;

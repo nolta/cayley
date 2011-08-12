@@ -1418,12 +1418,12 @@ llvm::Constant *CGObjCMac::GetEHType(QualType T) {
   if (T->isObjCIdType() ||
       T->isObjCQualifiedIdType()) {
     return CGM.GetAddrOfRTTIDescriptor(
-              CGM.getContext().ObjCIdRedefinitionType, /*ForEH=*/true);
+              CGM.getContext().getObjCIdRedefinitionType(), /*ForEH=*/true);
   }
   if (T->isObjCClassType() ||
       T->isObjCQualifiedClassType()) {
     return CGM.GetAddrOfRTTIDescriptor(
-             CGM.getContext().ObjCClassRedefinitionType, /*ForEH=*/true);
+             CGM.getContext().getObjCClassRedefinitionType(), /*ForEH=*/true);
   }
   if (T->isObjCObjectPointerType())
     return CGM.GetAddrOfRTTIDescriptor(T,  /*ForEH=*/true);
@@ -2753,7 +2753,6 @@ void FragileHazards::collectLocals() {
   llvm::DenseSet<llvm::Value*> AllocasToIgnore;
   addIfPresent(AllocasToIgnore, CGF.ReturnValue);
   addIfPresent(AllocasToIgnore, CGF.NormalCleanupDest);
-  addIfPresent(AllocasToIgnore, CGF.EHCleanupDest);
 
   // Collect all the allocas currently in the function.  This is
   // probably way too aggressive.
