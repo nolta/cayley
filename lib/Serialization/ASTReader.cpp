@@ -2988,26 +2988,11 @@ void ASTReader::InitializeContext(ASTContext &Ctx) {
       GetType(SpecialTypes[SPECIAL_TYPE_BUILTIN_VA_LIST]));
   }
   
-  if (unsigned Id = SpecialTypes[SPECIAL_TYPE_OBJC_ID]) {
-    if (Context->ObjCIdTypedefType.isNull())
-      Context->ObjCIdTypedefType = GetType(Id);
-  }
-  
-  if (unsigned Sel = SpecialTypes[SPECIAL_TYPE_OBJC_SELECTOR]) {
-    if (Context->ObjCSelTypedefType.isNull())
-      Context->ObjCSelTypedefType = GetType(Sel);
-  }
-  
   if (unsigned Proto = SpecialTypes[SPECIAL_TYPE_OBJC_PROTOCOL]) {
     if (Context->ObjCProtoType.isNull())
       Context->ObjCProtoType = GetType(Proto);
   }
   
-  if (unsigned Class = SpecialTypes[SPECIAL_TYPE_OBJC_CLASS]) {
-    if (Context->ObjCClassTypedefType.isNull()) 
-      Context->ObjCClassTypedefType = GetType(Class);
-  }
-
   if (unsigned String = SpecialTypes[SPECIAL_TYPE_CF_CONSTANT_STRING]) {
     if (!Context->CFConstantStringTypeDecl)
       Context->setCFConstantStringType(GetType(String));
@@ -3090,9 +3075,6 @@ void ASTReader::InitializeContext(ASTContext &Ctx) {
     if (Context->ObjCSelRedefinitionType.isNull())
       Context->ObjCSelRedefinitionType = GetType(ObjCSelRedef);
   }
-
-  if (SpecialTypes[SPECIAL_TYPE_INT128_INSTALLED])
-    Context->setInt128Installed();
 
   ReadPragmaDiagnosticMappings(Context->getDiagnostics());
 
@@ -4240,6 +4222,26 @@ Decl *ASTReader::GetDecl(DeclID ID) {
     case PREDEF_DECL_TRANSLATION_UNIT_ID:
       assert(Context && "No context available?");
       return Context->getTranslationUnitDecl();
+        
+    case PREDEF_DECL_OBJC_ID_ID:
+      assert(Context && "No context available?");
+      return Context->getObjCIdDecl();
+
+    case PREDEF_DECL_OBJC_SEL_ID:
+      assert(Context && "No context available?");
+      return Context->getObjCSelDecl();
+
+    case PREDEF_DECL_OBJC_CLASS_ID:
+      assert(Context && "No context available?");
+      return Context->getObjCClassDecl();
+        
+    case PREDEF_DECL_INT_128_ID:
+      assert(Context && "No context available?");
+      return Context->getInt128Decl();
+
+    case PREDEF_DECL_UNSIGNED_INT_128_ID:
+      assert(Context && "No context available?");
+      return Context->getUInt128Decl();
     }
     
     return 0;

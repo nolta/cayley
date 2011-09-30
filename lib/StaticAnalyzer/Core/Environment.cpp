@@ -13,12 +13,12 @@
 
 #include "clang/Analysis/AnalysisContext.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 
 using namespace clang;
 using namespace ento;
 
-SVal Environment::lookupExpr(const Stmt* E) const {
+SVal Environment::lookupExpr(const Stmt *E) const {
   const SVal* X = ExprBindings.lookup(E);
   if (X) {
     SVal V = *X;
@@ -143,7 +143,7 @@ static inline bool IsLocation(const Stmt *S) {
 Environment
 EnvironmentManager::removeDeadBindings(Environment Env,
                                        SymbolReaper &SymReaper,
-                                       const GRState *ST) {
+                                       const ProgramState *ST) {
 
   // We construct a new Environment object entirely, as this is cheaper than
   // individually removing all the subexpression bindings (which will greatly

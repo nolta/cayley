@@ -48,8 +48,8 @@ void VLASizeChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
     return;
 
   // FIXME: Handle multi-dimensional VLAs.
-  const Expr* SE = VLA->getSizeExpr();
-  const GRState *state = C.getState();
+  const Expr *SE = VLA->getSizeExpr();
+  const ProgramState *state = C.getState();
   SVal sizeV = state->getSVal(SE);
 
   if (sizeV.isUndef()) {
@@ -78,11 +78,11 @@ void VLASizeChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
   // Check if the size is zero.
   DefinedSVal sizeD = cast<DefinedSVal>(sizeV);
 
-  const GRState *stateNotZero, *stateZero;
+  const ProgramState *stateNotZero, *stateZero;
   llvm::tie(stateNotZero, stateZero) = state->assume(sizeD);
 
   if (stateZero && !stateNotZero) {
-    ExplodedNode* N = C.generateSink(stateZero);
+    ExplodedNode *N = C.generateSink(stateZero);
     if (!BT_zero)
       BT_zero.reset(new BuiltinBug("Declared variable-length array (VLA) has "
                                    "zero size"));

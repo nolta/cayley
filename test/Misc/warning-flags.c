@@ -17,7 +17,7 @@ This test serves two purposes:
 
 The list of warnings below should NEVER grow.  It should gradually shrink to 0.
 
-CHECK: Warnings without flags (317):
+CHECK: Warnings without flags (312):
 CHECK-NEXT:   auto_storage_class
 CHECK-NEXT:   backslash_newline_space
 CHECK-NEXT:   charize_microsoft_ext
@@ -158,7 +158,6 @@ CHECK-NEXT:   warn_c_kext
 CHECK-NEXT:   warn_call_to_pure_virtual_member_function_from_ctor_dtor
 CHECK-NEXT:   warn_call_wrong_number_of_arguments
 CHECK-NEXT:   warn_case_empty_range
-CHECK-NEXT:   warn_cfstring_truncated
 CHECK-NEXT:   warn_char_constant_too_large
 CHECK-NEXT:   warn_class_method_not_found
 CHECK-NEXT:   warn_cmdline_missing_macro_defs
@@ -222,7 +221,6 @@ CHECK-NEXT:   warn_integer_too_large_for_signed
 CHECK-NEXT:   warn_invalid_asm_cast_lvalue
 CHECK-NEXT:   warn_ivar_use_hidden
 CHECK-NEXT:   warn_label_attribute_not_unused
-CHECK-NEXT:   warn_main_one_arg
 CHECK-NEXT:   warn_many_braces_around_scalar_init
 CHECK-NEXT:   warn_maynot_respond
 CHECK-NEXT:   warn_member_extra_qualification
@@ -306,7 +304,6 @@ CHECK-NEXT:   warn_shift_negative
 CHECK-NEXT:   warn_standalone_specifier
 CHECK-NEXT:   warn_static_inline_explicit_inst_ignored
 CHECK-NEXT:   warn_static_non_static
-CHECK-NEXT:   warn_stringcompare
 CHECK-NEXT:   warn_template_export_unsupported
 CHECK-NEXT:   warn_template_spec_extra_headers
 CHECK-NEXT:   warn_tentative_incomplete_array
@@ -318,7 +315,6 @@ CHECK-NEXT:   warn_transparent_union_nonpointer
 CHECK-NEXT:   warn_typecheck_cond_incompatible_pointers
 CHECK-NEXT:   warn_typecheck_cond_pointer_integer_mismatch
 CHECK-NEXT:   warn_typecheck_function_qualifiers
-CHECK-NEXT:   warn_typename_missing
 CHECK-NEXT:   warn_ucn_escape_too_large
 CHECK-NEXT:   warn_ucn_not_valid_in_c89
 CHECK-NEXT:   warn_unavailable_fwdclass_message
@@ -331,7 +327,6 @@ CHECK-NEXT:   warn_unknown_method_family
 CHECK-NEXT:   warn_unkwown_analyzer_checker
 CHECK-NEXT:   warn_unterminated_char
 CHECK-NEXT:   warn_unterminated_string
-CHECK-NEXT:   warn_unusual_main_decl
 CHECK-NEXT:   warn_use_out_of_scope_declaration
 CHECK-NEXT:   warn_weak_identifier_undeclared
 CHECK-NEXT:   warn_weak_import

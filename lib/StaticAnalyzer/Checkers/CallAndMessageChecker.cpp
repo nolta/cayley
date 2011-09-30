@@ -47,7 +47,8 @@ private:
   void emitNilReceiverBug(CheckerContext &C, const ObjCMessage &msg,
                           ExplodedNode *N) const;
 
-  void HandleNilReceiver(CheckerContext &C, const GRState *state,
+  void HandleNilReceiver(CheckerContext &C,
+                         const ProgramState *state,
                          ObjCMessage msg) const;
 
   static void LazyInit_BT(const char *desc, llvm::OwningPtr<BugType> &BT) {
@@ -116,7 +117,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
                              MemRegionManager &mrMgr, Store s)
       : C(c), StoreMgr(storeMgr), MrMgr(mrMgr), store(s) {}
 
-      bool Find(const TypedRegion *R) {
+      bool Find(const TypedValueRegion *R) {
         QualType T = R->getValueType();
         if (const RecordType *RT = T->getAsStructureType()) {
           const RecordDecl *RD = RT->getDecl()->getDefinition();
@@ -216,7 +217,7 @@ void CallAndMessageChecker::checkPreStmt(const CallExpr *CE,
 void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
                                                 CheckerContext &C) const {
 
-  const GRState *state = C.getState();
+  const ProgramState *state = C.getState();
 
   // FIXME: Handle 'super'?
   if (const Expr *receiver = msg.getInstanceReceiver()) {
@@ -238,7 +239,7 @@ void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
       // Bifurcate the state into nil and non-nil ones.
       DefinedOrUnknownSVal receiverVal = cast<DefinedOrUnknownSVal>(recVal);
   
-      const GRState *notNilState, *nilState;
+      const ProgramState *notNilState, *nilState;
       llvm::tie(notNilState, nilState) = state->assume(receiverVal);
   
       // Handle receiver must be nil.
@@ -288,7 +289,7 @@ static bool supportsNilWithFloatRet(const llvm::Triple &triple) {
 }
 
 void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
-                                              const GRState *state,
+                                              const ProgramState *state,
                                               ObjCMessage msg) const {
   ASTContext &Ctx = C.getASTContext();
 
@@ -303,7 +304,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
     // have the "use of undefined value" be smarter about where the
     // undefined value came from.
     if (C.getPredecessor()->getParentMap().isConsumedExpr(msg.getOriginExpr())){
-      if (ExplodedNode* N = C.generateSink(state))
+      if (ExplodedNode *N = C.generateSink(state))
         emitNilReceiverBug(C, msg, N);
       return;
     }
@@ -328,7 +329,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
            Ctx.LongDoubleTy == CanRetTy ||
            Ctx.LongLongTy == CanRetTy ||
            Ctx.UnsignedLongLongTy == CanRetTy))) {
-      if (ExplodedNode* N = C.generateSink(state))
+      if (ExplodedNode *N = C.generateSink(state))
         emitNilReceiverBug(C, msg, N);
       return;
     }

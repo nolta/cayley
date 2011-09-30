@@ -2489,7 +2489,8 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
                                             NameInfo, T, TInfo, 
                                             FromConstructor->isExplicit(),
                                             D->isInlineSpecified(), 
-                                            D->isImplicit());
+                                            D->isImplicit(),
+                                            D->isConstexpr());
   } else if (isa<CXXDestructorDecl>(D)) {
     ToFunction = CXXDestructorDecl::Create(Importer.getToContext(),
                                            cast<CXXRecordDecl>(DC),
@@ -2505,6 +2506,7 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
                                            NameInfo, T, TInfo,
                                            D->isInlineSpecified(),
                                            FromConversion->isExplicit(),
+                                           D->isConstexpr(),
                                            Importer.Import(D->getLocEnd()));
   } else if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D)) {
     ToFunction = CXXMethodDecl::Create(Importer.getToContext(), 
@@ -2514,6 +2516,7 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
                                        Method->isStatic(),
                                        Method->getStorageClassAsWritten(),
                                        Method->isInlineSpecified(),
+                                       D->isConstexpr(),
                                        Importer.Import(D->getLocEnd()));
   } else {
     ToFunction = FunctionDecl::Create(Importer.getToContext(), DC,
@@ -2521,7 +2524,8 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
                                       NameInfo, T, TInfo, D->getStorageClass(),
                                       D->getStorageClassAsWritten(),
                                       D->isInlineSpecified(),
-                                      D->hasWrittenPrototype());
+                                      D->hasWrittenPrototype(),
+                                      D->isConstexpr());
   }
 
   // Import the qualifier, if any.

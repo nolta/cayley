@@ -282,17 +282,24 @@ def warn_sizeof_pointer_type_memaccess : Warning<
 /// main()
 // static/inline main() are not errors in C, just in C++.
 def warn_unusual_main_decl : Warning<"'main' should not be declared "
-    "%select{static|inline|static or inline}0">;
+    "%select{static|inline|static or inline}0">,
+    InGroup<Main>;
 def err_unusual_main_decl : Error<"'main' is not allowed to be declared "
-    "%select{static|inline|static or inline}0">;
-def err_main_template_decl : Error<"'main' cannot be a template">;
-def err_main_returns_nonint : Error<"'main' must return 'int'">;
+    "%select{static|inline|static or inline}0">,
+    InGroup<Main>;
+def err_main_template_decl : Error<"'main' cannot be a template">,
+    InGroup<Main>;
+def err_main_returns_nonint : Error<"'main' must return 'int'">,
+    InGroup<Main>;
 def err_main_surplus_args : Error<"too many parameters (%0) for 'main': "
-    "must be 0, 2, or 3">;
-def warn_main_one_arg : Warning<"only one parameter on 'main' declaration">;
+    "must be 0, 2, or 3">,
+    InGroup<Main>;
+def warn_main_one_arg : Warning<"only one parameter on 'main' declaration">,
+    InGroup<Main>;
 def err_main_arg_wrong : Error<"%select{first|second|third|fourth}0 "
     "parameter of 'main' (%select{argument count|argument array|environment|"
-    "platform-specific data}0) must be of type %1">;
+    "platform-specific data}0) must be of type %1">,
+    InGroup<Main>;
 
 /// parser diagnostics
 def ext_typedef_without_a_name : ExtWarn<"typedef requires a name">,
@@ -1151,6 +1158,16 @@ def err_for_range_begin_end_types_differ : Error<
 def note_for_range_type : Note<"range has type %0">;
 def note_for_range_begin_end : Note<
   "selected '%select{begin|end}0' %select{function|template }1%2 with iterator type %3">;
+
+// C++0x constexpr
+def err_invalid_constexpr : Error<
+  "%select{function parameter|typedef|non-static data member}0 "
+  "cannot be constexpr">;
+def err_constexpr_tag : Error<
+  "%select{class|struct|union|enum}0 cannot be marked constexpr">;
+def err_constexpr_dtor : Error<"destructor cannot be marked constexpr">;
+def err_constexpr_no_declarators : Error<
+  "constexpr can only be used in variable and function declarations">;
   
 // Objective-C++
 def err_objc_decls_may_only_appear_in_global_scope : Error<
@@ -2021,6 +2038,9 @@ def err_not_class_template_specialization : Error<
   "parameter}0">;
 def err_function_specialization_in_class : Error<
   "cannot specialize a function %0 within class scope">;
+def ext_function_specialization_in_class : ExtWarn<
+  "explicit specialization of %0 within class scope is a Microsoft extension">,
+  InGroup<Microsoft>;
 def ext_explicit_specialization_storage_class : ExtWarn<
   "explicit specialization cannot have a storage class">;
 def err_explicit_specialization_inconsistent_storage_class : Error<
@@ -2232,7 +2252,8 @@ def note_typename_refers_here : Note<
 def err_typename_missing : Error<
   "missing 'typename' prior to dependent type name '%0%1'">;
 def warn_typename_missing : ExtWarn<
-  "missing 'typename' prior to dependent type name '%0%1'">;
+  "missing 'typename' prior to dependent type name '%0%1'">,
+  InGroup<DiagGroup<"typename-missing">>;
 def ext_typename_outside_of_template : ExtWarn<
   "'typename' occurs outside of a template">, InGroup<CXX0x>;
 def err_typename_refers_to_using_value_decl : Error<
@@ -2929,8 +2950,12 @@ def note_precedence_conditional_silence : Note<
   "place parentheses around the '%0' expression to silence this warning">;
 
 def warn_logical_instead_of_bitwise : Warning<
-  "use of logical %0 with constant operand; switch to bitwise %1 or "
-  "remove constant">, InGroup<DiagGroup<"constant-logical-operand">>;
+  "use of logical '%0' with constant operand">,
+  InGroup<DiagGroup<"constant-logical-operand">>;
+def note_logical_instead_of_bitwise_change_operator : Note<
+  "use '%0' for a bitwise operation">;
+def note_logical_instead_of_bitwise_remove_constant : Note<
+  "remove constant to silence this warning">;
 
 def warn_bitwise_and_in_bitwise_or : Warning<
   "'&' within '|'">, InGroup<BitwiseOpParentheses>;
@@ -4257,7 +4282,8 @@ def warn_comparison_always : Warning<
 
 def warn_stringcompare : Warning<
   "result of comparison against %select{a string literal|@encode}0 is "
-  "unspecified (use strncmp instead)">;
+  "unspecified (use strncmp instead)">,
+  InGroup<DiagGroup<"string-compare">>;
 
 // Generic selections.
 def err_assoc_type_incomplete : Error<
@@ -4290,10 +4316,12 @@ def err_block_returning_array_function : Error<
 
 // CFString checking
 def err_cfstring_literal_not_string_constant : Error<
-  "CFString literal is not a string constant">;
+  "CFString literal is not a string constant">,
+  InGroup<DiagGroup<"CFString-literal">>;
 def warn_cfstring_truncated : Warning<
   "input conversion stopped due to an input byte that does not "
-  "belong to the input codeset UTF-8">;
+  "belong to the input codeset UTF-8">,
+  InGroup<DiagGroup<"CFString-literal">>;
 
 // Statements.
 def err_continue_not_in_loop : Error<

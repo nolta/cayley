@@ -143,6 +143,9 @@ void CodeGenModule::Release() {
 
   if (getCodeGenOpts().EmitGcovArcs || getCodeGenOpts().EmitGcovNotes)
     EmitCoverageFile();
+
+  if (DebugInfo)
+    DebugInfo->finalize();
 }
 
 void CodeGenModule::UpdateCompletedType(const TagDecl *TD) {

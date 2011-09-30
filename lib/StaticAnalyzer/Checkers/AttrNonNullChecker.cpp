@@ -33,12 +33,12 @@ public:
 
 void AttrNonNullChecker::checkPreStmt(const CallExpr *CE,
                                       CheckerContext &C) const {
-  const GRState *state = C.getState();
+  const ProgramState *state = C.getState();
 
   // Check if the callee has a 'nonnull' attribute.
   SVal X = state->getSVal(CE->getCallee());
 
-  const FunctionDecl* FD = X.getAsFunctionDecl();
+  const FunctionDecl *FD = X.getAsFunctionDecl();
   if (!FD)
     return;
 
@@ -85,7 +85,7 @@ void AttrNonNullChecker::checkPreStmt(const CallExpr *CE,
     }
 
     ConstraintManager &CM = C.getConstraintManager();
-    const GRState *stateNotNull, *stateNull;
+    const ProgramState *stateNotNull, *stateNull;
     llvm::tie(stateNotNull, stateNull) = CM.assumeDual(state, *DV);
 
     if (stateNull && !stateNotNull) {

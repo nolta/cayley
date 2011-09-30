@@ -2818,7 +2818,17 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
 
   // Set up predefined declaration IDs.
   DeclIDs[Context.getTranslationUnitDecl()] = PREDEF_DECL_TRANSLATION_UNIT_ID;
-
+  if (Context.ObjCIdDecl)
+    DeclIDs[Context.ObjCIdDecl] = PREDEF_DECL_OBJC_ID_ID;
+  if (Context.ObjCSelDecl)
+    DeclIDs[Context.ObjCSelDecl] = PREDEF_DECL_OBJC_SEL_ID;
+  if (Context.ObjCClassDecl)
+    DeclIDs[Context.ObjCClassDecl] = PREDEF_DECL_OBJC_CLASS_ID;
+  if (Context.Int128Decl)
+    DeclIDs[Context.Int128Decl] = PREDEF_DECL_INT_128_ID;
+  if (Context.UInt128Decl)
+    DeclIDs[Context.UInt128Decl] = PREDEF_DECL_UNSIGNED_INT_128_ID;
+  
   if (!Chain) {
     // Make sure that we emit IdentifierInfos (and any attached
     // declarations) for builtins. We don't need to do this when we're
@@ -3025,10 +3035,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   // Form the record of special types.
   RecordData SpecialTypes;
   AddTypeRef(Context.getBuiltinVaListType(), SpecialTypes);
-  AddTypeRef(Context.ObjCIdTypedefType, SpecialTypes);
-  AddTypeRef(Context.ObjCSelTypedefType, SpecialTypes);
   AddTypeRef(Context.ObjCProtoType, SpecialTypes);
-  AddTypeRef(Context.ObjCClassTypedefType, SpecialTypes);
   AddTypeRef(Context.getRawCFConstantStringType(), SpecialTypes);
   AddTypeRef(Context.getFILEType(), SpecialTypes);
   AddTypeRef(Context.getjmp_bufType(), SpecialTypes);
@@ -3036,7 +3043,6 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   AddTypeRef(Context.ObjCIdRedefinitionType, SpecialTypes);
   AddTypeRef(Context.ObjCClassRedefinitionType, SpecialTypes);
   AddTypeRef(Context.ObjCSelRedefinitionType, SpecialTypes);
-  SpecialTypes.push_back(Context.isInt128Installed());
   
   // Keep writing types and declarations until all types and
   // declarations have been written.

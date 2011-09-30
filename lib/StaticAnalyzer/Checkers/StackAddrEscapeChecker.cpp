@@ -17,7 +17,7 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/SmallString.h"
 using namespace clang;
@@ -50,7 +50,7 @@ SourceRange StackAddrEscapeChecker::GenName(raw_ostream &os,
   
   // Check if the region is a compound literal.
   if (const CompoundLiteralRegion* CR = dyn_cast<CompoundLiteralRegion>(R)) { 
-    const CompoundLiteralExpr* CL = CR->getLiteralExpr();
+    const CompoundLiteralExpr *CL = CR->getLiteralExpr();
     os << "stack memory associated with a compound literal "
           "declared on line "
         << SM.getExpansionLineNumber(CL->getLocStart())
@@ -58,7 +58,7 @@ SourceRange StackAddrEscapeChecker::GenName(raw_ostream &os,
     range = CL->getSourceRange();
   }
   else if (const AllocaRegion* AR = dyn_cast<AllocaRegion>(R)) {
-    const Expr* ARE = AR->getExpr();
+    const Expr *ARE = AR->getExpr();
     SourceLocation L = ARE->getLocStart();
     range = ARE->getSourceRange();    
     os << "stack memory allocated by call to alloca() on line "
@@ -134,7 +134,7 @@ void StackAddrEscapeChecker::checkPreStmt(const ReturnStmt *RS,
 void StackAddrEscapeChecker::checkEndPath(EndOfFunctionNodeBuilder &B,
                                         ExprEngine &Eng) const {
 
-  const GRState *state = B.getState();
+  const ProgramState *state = B.getState();
 
   // Iterate over all bindings to global variables and see if it contains
   // a memory region in the stack space.
