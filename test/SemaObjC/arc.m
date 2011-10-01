@@ -491,9 +491,7 @@ void test26(id y) {
   __weak id _myProp1;
   id myProp2;
 }
-@property id x; // expected-warning {{no 'assign', 'retain', or 'copy' attribute is specified - 'assign' is assumed}} \
-                // expected-warning {{default property attribute 'assign' not appropriate for non-gc object}} \
-                // expected-note {{declared here}}
+@property id x;
 @property (readonly) id ro; // expected-note {{declared here}}
 @property (readonly) id custom_ro;
 @property int y;
@@ -504,7 +502,7 @@ void test26(id y) {
 @end
 
 @implementation Test27
-@synthesize x; // expected-error {{ARC forbids synthesizing a property of an Objective-C object with unspecified ownership or storage attribute}}
+@synthesize x;
 @synthesize ro; // expected-error {{ARC forbids synthesizing a property of an Objective-C object with unspecified ownership or storage attribute}}
 @synthesize y;
 
@@ -648,6 +646,8 @@ void test37(Test37 *c) {
   for (id y in c) { // expected-error {{collection expression type 'Test37' is a forward declaration}}
     (void) y;
   }
+
+  (void)sizeof(id*); // no error.
 }
 
 // rdar://problem/9887979

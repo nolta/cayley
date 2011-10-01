@@ -25,6 +25,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ErrorHandling.h"
 #include <cstdio>
 #include <ctime>
 using namespace clang;
@@ -93,7 +94,7 @@ void Preprocessor::RegisterBuiltinMacros() {
   Ident__has_include_next = RegisterBuiltinMacro(*this, "__has_include_next");
 
   // Microsoft Extensions.
-  if (Features.Microsoft) 
+  if (Features.MicrosoftExt) 
     Ident__pragma = RegisterBuiltinMacro(*this, "__pragma");
   else
     Ident__pragma = 0;
@@ -185,7 +186,8 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
 
   // If this is a builtin macro, like __LINE__ or _Pragma, handle it specially.
   if (MI->isBuiltinMacro()) {
-    if (Callbacks) Callbacks->MacroExpands(Identifier, MI);
+    if (Callbacks) Callbacks->MacroExpands(Identifier, MI,
+                                           Identifier.getLocation());
     ExpandBuiltinMacro(Identifier);
     return false;
   }
@@ -226,12 +228,13 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
   // Notice that this macro has been used.
   markMacroAsUsed(MI);
 
-  if (Callbacks) Callbacks->MacroExpands(Identifier, MI);
-  
-  // If we started lexing a macro, enter the macro expansion body.
-
   // Remember where the token is expanded.
   SourceLocation ExpandLoc = Identifier.getLocation();
+
+  if (Callbacks) Callbacks->MacroExpands(Identifier, MI,
+                                         SourceRange(ExpandLoc, ExpansionEnd));
+  
+  // If we started lexing a macro, enter the macro expansion body.
 
   // If this macro expands to no tokens, don't bother to push it onto the
   // expansion stack, only to take it right back off.
@@ -255,7 +258,6 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
       if (HadLeadingSpace) Identifier.setFlag(Token::LeadingSpace);
     }
     Identifier.setFlag(Token::LeadingEmptyMacro);
-    LastEmptyMacroExpansionLoc = ExpandLoc;
     ++NumFastMacroExpanded;
     return false;
 
@@ -352,13 +354,6 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       // an argument value in a macro could expand to ',' or '(' or ')'.
       LexUnexpandedToken(Tok);
 
-      if (Tok.is(tok::code_completion)) {
-        if (CodeComplete)
-          CodeComplete->CodeCompleteMacroArgument(MacroName.getIdentifierInfo(),
-                                                  MI, NumActuals);
-        LexUnexpandedToken(Tok);
-      }
-      
       if (Tok.is(tok::eof) || Tok.is(tok::eod)) { // "#if f(<eof>" & "#if f(\n"
         Diag(MacroName, diag::err_unterm_macro_invoc);
         // Do not lose the EOF/EOD.  Return it to the client.
@@ -393,7 +388,15 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
         if (MacroInfo *MI = getMacroInfo(Tok.getIdentifierInfo()))
           if (!MI->isEnabled())
             Tok.setFlag(Token::DisableExpand);
+      } else if (Tok.is(tok::code_completion)) {
+        if (CodeComplete)
+          CodeComplete->CodeCompleteMacroArgument(MacroName.getIdentifierInfo(),
+                                                  MI, NumActuals);
+        // Don't mark that we reached the code-completion point because the
+        // parser is going to handle the token and there will be another
+        // code-completion callback.
       }
+
       ArgTokens.push_back(Tok);
     }
 
@@ -487,8 +490,7 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
     return 0;
   }
 
-  return MacroArgs::create(MI, ArgTokens.data(), ArgTokens.size(),
-                           isVarargsElided, *this);
+  return MacroArgs::create(MI, ArgTokens, isVarargsElided, *this);
 }
 
 /// \brief Keeps macro expanded tokens for TokenLexers.
@@ -597,6 +599,8 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("objc_arc", LangOpts.ObjCAutoRefCount)
            .Case("objc_arc_weak", LangOpts.ObjCAutoRefCount && 
                  LangOpts.ObjCRuntimeHasWeak)
+           .Case("objc_fixed_enum", LangOpts.ObjC2)
+           .Case("objc_instancetype", LangOpts.ObjC2)
            .Case("objc_nonfragile_abi", LangOpts.ObjCNonFragileABI)
            .Case("objc_weak_class", LangOpts.ObjCNonFragileABI)
            .Case("ownership_holds", true)
@@ -610,22 +614,31 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("cxx_alias_templates", LangOpts.CPlusPlus0x)
            .Case("cxx_attributes", LangOpts.CPlusPlus0x)
            .Case("cxx_auto_type", LangOpts.CPlusPlus0x)
+         //.Case("cxx_constexpr", false);
            .Case("cxx_decltype", LangOpts.CPlusPlus0x)
            .Case("cxx_default_function_template_args", LangOpts.CPlusPlus0x)
            .Case("cxx_delegating_constructors", LangOpts.CPlusPlus0x)
            .Case("cxx_deleted_functions", LangOpts.CPlusPlus0x)
+           .Case("cxx_explicit_conversions", LangOpts.CPlusPlus0x)
          //.Case("cxx_generalized_initializers", LangOpts.CPlusPlus0x)
+           .Case("cxx_implicit_moves", LangOpts.CPlusPlus0x)
+         //.Case("cxx_inheriting_constructors", false)
            .Case("cxx_inline_namespaces", LangOpts.CPlusPlus0x)
          //.Case("cxx_lambdas", false)
+           .Case("cxx_nonstatic_member_init", LangOpts.CPlusPlus0x)
            .Case("cxx_noexcept", LangOpts.CPlusPlus0x)
            .Case("cxx_nullptr", LangOpts.CPlusPlus0x)
            .Case("cxx_override_control", LangOpts.CPlusPlus0x)
            .Case("cxx_range_for", LangOpts.CPlusPlus0x)
+         //.Case("cxx_raw_string_literals", false)
            .Case("cxx_reference_qualified_functions", LangOpts.CPlusPlus0x)
            .Case("cxx_rvalue_references", LangOpts.CPlusPlus0x)
            .Case("cxx_strong_enums", LangOpts.CPlusPlus0x)
            .Case("cxx_static_assert", LangOpts.CPlusPlus0x)
            .Case("cxx_trailing_return", LangOpts.CPlusPlus0x)
+         //.Case("cxx_unicode_literals", false)
+         //.Case("cxx_unrestricted_unions", false)
+         //.Case("cxx_user_literals", false)
            .Case("cxx_variadic_templates", LangOpts.CPlusPlus0x)
            // Type traits
            .Case("has_nothrow_assign", LangOpts.CPlusPlus)
@@ -677,7 +690,8 @@ static bool HasExtension(const Preprocessor &PP, const IdentifierInfo *II) {
 
   // If the use of an extension results in an error diagnostic, extensions are
   // effectively unavailable, so just return false here.
-  if (PP.getDiagnostics().getExtensionHandlingBehavior()==Diagnostic::Ext_Error)
+  if (PP.getDiagnostics().getExtensionHandlingBehavior() ==
+      DiagnosticsEngine::Ext_Error)
     return false;
 
   const LangOptions &LangOpts = PP.getLangOptions();
@@ -690,8 +704,11 @@ static bool HasExtension(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("c_static_assert", true)
            // C++0x features supported by other languages as extensions.
            .Case("cxx_deleted_functions", LangOpts.CPlusPlus)
+           .Case("cxx_explicit_conversions", LangOpts.CPlusPlus)
            .Case("cxx_inline_namespaces", LangOpts.CPlusPlus)
+           .Case("cxx_nonstatic_member_init", LangOpts.CPlusPlus)
            .Case("cxx_override_control", LangOpts.CPlusPlus)
+           .Case("cxx_range_for", LangOpts.CPlusPlus)
            .Case("cxx_reference_qualified_functions", LangOpts.CPlusPlus)
            .Case("cxx_rvalue_references", LangOpts.CPlusPlus)
            .Default(false);
@@ -769,7 +786,7 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
   // Search include directories.
   const DirectoryLookup *CurDir;
   const FileEntry *File =
-      PP.LookupFile(Filename, isAngled, LookupFrom, CurDir, NULL, NULL);
+      PP.LookupFile(Filename, isAngled, LookupFrom, CurDir, NULL, NULL, NULL);
 
   // Get the result value.  Result = true means the file exists.
   bool Result = File != 0;
@@ -1000,7 +1017,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     OS << (int)Value;
     Tok.setKind(tok::numeric_constant);
   } else {
-    assert(0 && "Unknown identifier!");
+    llvm_unreachable("Unknown identifier!");
   }
   CreateString(OS.str().data(), OS.str().size(), Tok, Tok.getLocation());
 }

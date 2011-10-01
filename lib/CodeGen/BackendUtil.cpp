@@ -24,13 +24,13 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
@@ -41,7 +41,7 @@ using namespace llvm;
 namespace {
 
 class EmitAssemblyHelper {
-  Diagnostic &Diags;
+  DiagnosticsEngine &Diags;
   const CodeGenOptions &CodeGenOpts;
   const TargetOptions &TargetOpts;
   const LangOptions &LangOpts;
@@ -86,7 +86,7 @@ private:
   bool AddEmitPasses(BackendAction Action, formatted_raw_ostream &OS);
 
 public:
-  EmitAssemblyHelper(Diagnostic &_Diags,
+  EmitAssemblyHelper(DiagnosticsEngine &_Diags,
                      const CodeGenOptions &CGOpts, const TargetOptions &TOpts,
                      const LangOptions &LOpts,
                      Module *M)
@@ -269,6 +269,8 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     BackendArgs.push_back("-time-passes");
   for (unsigned i = 0, e = CodeGenOpts.BackendOptions.size(); i != e; ++i)
     BackendArgs.push_back(CodeGenOpts.BackendOptions[i].c_str());
+  if (CodeGenOpts.NoGlobalMerge)
+    BackendArgs.push_back("-global-merge=false");
   BackendArgs.push_back(0);
   llvm::cl::ParseCommandLineOptions(BackendArgs.size() - 1,
                                     const_cast<char **>(&BackendArgs[0]));
@@ -393,7 +395,8 @@ void EmitAssemblyHelper::EmitAssembly(BackendAction Action, raw_ostream *OS) {
   }
 }
 
-void clang::EmitBackendOutput(Diagnostic &Diags, const CodeGenOptions &CGOpts,
+void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
+                              const CodeGenOptions &CGOpts,
                               const TargetOptions &TOpts,
                               const LangOptions &LOpts,
                               Module *M,

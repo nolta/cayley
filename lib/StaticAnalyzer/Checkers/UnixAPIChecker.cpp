@@ -62,7 +62,8 @@ void UnixAPIChecker::CheckOpen(CheckerContext &C, const CallExpr *CE) const {
   // The definition of O_CREAT is platform specific.  We need a better way
   // of querying this information from the checking environment.
   if (!Val_O_CREAT.hasValue()) {
-    if (C.getASTContext().Target.getTriple().getVendor() == llvm::Triple::Apple)
+    if (C.getASTContext().getTargetInfo().getTriple().getVendor() 
+                                                      == llvm::Triple::Apple)
       Val_O_CREAT = 0x0200;
     else {
       // FIXME: We need a more general way of getting the O_CREAT value.
@@ -116,8 +117,8 @@ void UnixAPIChecker::CheckOpen(CheckerContext &C, const CallExpr *CE) const {
 
     LazyInitialize(BT_open, "Improper use of 'open'");
 
-    RangedBugReport *report =
-      new RangedBugReport(*BT_open,
+    BugReport *report =
+      new BugReport(*BT_open,
                             "Call to 'open' requires a third argument when "
                             "the 'O_CREAT' flag is set", N);
     report->addRange(oflagsEx->getSourceRange());
@@ -163,7 +164,7 @@ void UnixAPIChecker::CheckPthreadOnce(CheckerContext &C,
 
   LazyInitialize(BT_pthreadOnce, "Improper use of 'pthread_once'");
 
-  RangedBugReport *report = new RangedBugReport(*BT_pthreadOnce, os.str(), N);
+  BugReport *report = new BugReport(*BT_pthreadOnce, os.str(), N);
   report->addRange(CE->getArg(0)->getSourceRange());
   C.EmitReport(report);
 }
@@ -202,12 +203,12 @@ void UnixAPIChecker::CheckMallocZero(CheckerContext &C,
 
     LazyInitialize(BT_mallocZero, "Undefined allocation of 0 bytes");
     
-    EnhancedBugReport *report =
-      new EnhancedBugReport(*BT_mallocZero, "Call to 'malloc' has an allocation"
+    BugReport *report =
+      new BugReport(*BT_mallocZero, "Call to 'malloc' has an allocation"
                                             " size of 0 bytes", N);
     report->addRange(CE->getArg(0)->getSourceRange());
-    report->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue,
-                              CE->getArg(0));
+    report->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N,
+                                                                CE->getArg(0)));
     C.EmitReport(report);
     return;
   }

@@ -96,7 +96,9 @@ class CFGStmt : public CFGElement {
 public:
   CFGStmt(Stmt *S) : CFGElement(Statement, S) {}
 
-  Stmt *getStmt() const { return static_cast<Stmt *>(Data1.getPointer()); }
+  const Stmt *getStmt() const { 
+    return static_cast<const Stmt *>(Data1.getPointer());
+  }
 
   static bool classof(const CFGElement *E) {
     return E->getKind() == Statement;
@@ -331,10 +333,21 @@ class CFGBlock {
   AdjacentBlocks Preds;
   AdjacentBlocks Succs;
 
+  /// NoReturn - This bit is set when the basic block contains a function call
+  /// or implicit destructor that is attributed as 'noreturn'. In that case,
+  /// control cannot technically ever proceed past this block. All such blocks
+  /// will have a single immediate successor: the exit block. This allows them
+  /// to be easily reached from the exit block and using this bit quickly
+  /// recognized without scanning the contents of the block.
+  ///
+  /// Optimization Note: This bit could be profitably folded with Terminator's
+  /// storage if the memory usage of CFGBlock becomes an issue.
+  unsigned HasNoReturnElement : 1;
+
 public:
   explicit CFGBlock(unsigned blockid, BumpVectorContext &C)
     : Elements(C), Label(NULL), Terminator(NULL), LoopTarget(NULL),
-      BlockID(blockid), Preds(C, 1), Succs(C, 1) {}
+      BlockID(blockid), Preds(C, 1), Succs(C, 1), HasNoReturnElement(false) {}
   ~CFGBlock() {}
 
   // Statement iterators
@@ -456,6 +469,7 @@ public:
   void setTerminator(Stmt *Statement) { Terminator = Statement; }
   void setLabel(Stmt *Statement) { Label = Statement; }
   void setLoopTarget(const Stmt *loopTarget) { LoopTarget = loopTarget; }
+  void setHasNoReturnElement() { HasNoReturnElement = true; }
 
   CFGTerminator getTerminator() { return Terminator; }
   const CFGTerminator getTerminator() const { return Terminator; }
@@ -470,6 +484,8 @@ public:
 
   Stmt *getLabel() { return Label; }
   const Stmt *getLabel() const { return Label; }
+
+  bool hasNoReturnElement() const { return HasNoReturnElement; }
 
   unsigned getBlockID() const { return BlockID; }
 
@@ -502,6 +518,10 @@ public:
   
   void appendTemporaryDtor(CXXBindTemporaryExpr *E, BumpVectorContext &C) {
     Elements.push_back(CFGTemporaryDtor(E), C);
+  }
+
+  void appendAutomaticObjDtor(VarDecl *VD, Stmt *S, BumpVectorContext &C) {
+    Elements.push_back(CFGAutomaticObjDtor(VD, S), C);
   }
 
   // Destructors must be inserted in reversed order. So insertion is in two
@@ -611,6 +631,18 @@ public:
 
   CFGBlock *       getIndirectGotoBlock() { return IndirectGotoBlock; }
   const CFGBlock * getIndirectGotoBlock() const { return IndirectGotoBlock; }
+  
+  typedef std::vector<const CFGBlock*>::const_iterator try_block_iterator;
+  try_block_iterator try_blocks_begin() const {
+    return TryDispatchBlocks.begin();
+  }
+  try_block_iterator try_blocks_end() const {
+    return TryDispatchBlocks.end();
+  }
+  
+  void addTryDispatchBlock(const CFGBlock *block) {
+    TryDispatchBlocks.push_back(block);
+  }
 
   //===--------------------------------------------------------------------===//
   // Member templates useful for various batch operations over CFGs.
@@ -622,7 +654,7 @@ public:
       for (CFGBlock::const_iterator BI=(*I)->begin(), BE=(*I)->end();
            BI != BE; ++BI) {
         if (const CFGStmt *stmt = BI->getAs<CFGStmt>())
-          O(stmt->getStmt());
+          O(const_cast<Stmt*>(stmt->getStmt()));
       }
   }
 
@@ -689,6 +721,10 @@ private:
   BumpVectorContext BlkBVC;
   
   CFGBlockListTy Blocks;
+  
+  /// C++ 'try' statements are modeled with an indirect dispatch block.
+  /// This is the collection of such blocks present in the CFG.
+  std::vector<const CFGBlock *> TryDispatchBlocks;
 
 };
 } // end namespace clang

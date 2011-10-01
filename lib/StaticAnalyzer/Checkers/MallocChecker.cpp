@@ -484,7 +484,7 @@ void MallocChecker::ReportBadFree(CheckerContext &C, SVal ArgVal,
         os << "not memory allocated by malloc()";
     }
     
-    EnhancedBugReport *R = new EnhancedBugReport(*BT_BadFree, os.str(), N);
+    BugReport *R = new BugReport(*BT_BadFree, os.str(), N);
     R->addRange(range);
     C.EmitReport(R);
   }
@@ -538,11 +538,8 @@ void MallocChecker::ReallocMem(CheckerContext &C, const CallExpr *CE) const {
       if (const ProgramState *stateFree = 
           FreeMemAux(C, CE, stateSizeZero, 0, false)) {
 
-        // Add the state transition to set input pointer argument to be free.
-        C.addTransition(stateFree);
-
-        // Bind the return value to UndefinedVal because it is now free.
-        C.addTransition(stateFree->BindExpr(CE, UndefinedVal(), true));
+        // Bind the return value to NULL because it is now free.
+        C.addTransition(stateFree->BindExpr(CE, svalBuilder.makeNull(), true));
       }
     if (const ProgramState *stateSizeNotZero = stateNotEqual->assume(SizeZero,false))
       if (const ProgramState *stateFree = FreeMemAux(C, CE, stateSizeNotZero,

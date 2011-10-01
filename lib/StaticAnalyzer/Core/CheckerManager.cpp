@@ -12,9 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
-#include "clang/StaticAnalyzer/Core/CheckerProvider.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/Analysis/ProgramPoint.h"
 #include "clang/AST/DeclBase.h"
 
@@ -347,14 +347,15 @@ bool CheckerManager::wantsRegionChangeUpdate(const ProgramState *state) {
 const ProgramState *
 CheckerManager::runCheckersForRegionChanges(const ProgramState *state,
                             const StoreManager::InvalidatedSymbols *invalidated,
-                                            const MemRegion * const *Begin,
-                                            const MemRegion * const *End) {
+                                    ArrayRef<const MemRegion *> ExplicitRegions,
+                                          ArrayRef<const MemRegion *> Regions) {
   for (unsigned i = 0, e = RegionChangesCheckers.size(); i != e; ++i) {
     // If any checker declares the state infeasible (or if it starts that way),
     // bail out.
     if (!state)
       return NULL;
-    state = RegionChangesCheckers[i].CheckFn(state, invalidated, Begin, End);
+    state = RegionChangesCheckers[i].CheckFn(state, invalidated, 
+                                             ExplicitRegions, Regions);
   }
   return state;
 }
@@ -424,6 +425,14 @@ void CheckerManager::runCheckersOnEndOfTranslationUnit(
                                                   BugReporter &BR) {
   for (unsigned i = 0, e = EndOfTranslationUnitCheckers.size(); i != e; ++i)
     EndOfTranslationUnitCheckers[i](TU, mgr, BR);
+}
+
+void CheckerManager::runCheckersForPrintState(raw_ostream &Out,
+                                              const ProgramState *State,
+                                              const char *NL, const char *Sep) {
+  for (llvm::DenseMap<CheckerTag, CheckerRef>::iterator
+        I = CheckerTags.begin(), E = CheckerTags.end(); I != E; ++I)
+    I->second->printState(Out, State, NL, Sep);
 }
 
 //===----------------------------------------------------------------------===//
@@ -541,9 +550,6 @@ CheckerManager::~CheckerManager() {
   for (unsigned i = 0, e = CheckerDtors.size(); i != e; ++i)
     CheckerDtors[i]();
 }
-
-// Anchor for the vtable.
-CheckerProvider::~CheckerProvider() { }
 
 // Anchor for the vtable.
 GraphExpander::~GraphExpander() { }

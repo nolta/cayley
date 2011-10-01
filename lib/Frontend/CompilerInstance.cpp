@@ -19,12 +19,13 @@
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PTHManager.h"
-#include "clang/Frontend/ChainedDiagnosticClient.h"
+#include "clang/Frontend/ChainedDiagnosticConsumer.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/LogDiagnosticPrinter.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
-#include "clang/Frontend/VerifyDiagnosticsClient.h"
+#include "clang/Frontend/VerifyDiagnosticConsumer.h"
 #include "clang/Frontend/Utils.h"
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
@@ -52,7 +53,7 @@ void CompilerInstance::setInvocation(CompilerInvocation *Value) {
   Invocation = Value;
 }
 
-void CompilerInstance::setDiagnostics(Diagnostic *Value) {
+void CompilerInstance::setDiagnostics(DiagnosticsEngine *Value) {
   Diagnostics = Value;
 }
 
@@ -87,7 +88,7 @@ void CompilerInstance::setCodeCompletionConsumer(CodeCompleteConsumer *Value) {
 // Diagnostics
 static void SetUpBuildDumpLog(const DiagnosticOptions &DiagOpts,
                               unsigned argc, const char* const *argv,
-                              Diagnostic &Diags) {
+                              DiagnosticsEngine &Diags) {
   std::string ErrorInfo;
   llvm::OwningPtr<raw_ostream> OS(
     new llvm::raw_fd_ostream(DiagOpts.DumpBuildInformation.c_str(), ErrorInfo));
@@ -103,14 +104,14 @@ static void SetUpBuildDumpLog(const DiagnosticOptions &DiagOpts,
   (*OS) << '\n';
 
   // Chain in a diagnostic client which will log the diagnostics.
-  DiagnosticClient *Logger =
+  DiagnosticConsumer *Logger =
     new TextDiagnosticPrinter(*OS.take(), DiagOpts, /*OwnsOutputStream=*/true);
-  Diags.setClient(new ChainedDiagnosticClient(Diags.takeClient(), Logger));
+  Diags.setClient(new ChainedDiagnosticConsumer(Diags.takeClient(), Logger));
 }
 
 static void SetUpDiagnosticLog(const DiagnosticOptions &DiagOpts,
                                const CodeGenOptions *CodeGenOpts,
-                               Diagnostic &Diags) {
+                               DiagnosticsEngine &Diags) {
   std::string ErrorInfo;
   bool OwnsStream = false;
   raw_ostream *OS = &llvm::errs();
@@ -135,33 +136,42 @@ static void SetUpDiagnosticLog(const DiagnosticOptions &DiagOpts,
                                                           OwnsStream);
   if (CodeGenOpts)
     Logger->setDwarfDebugFlags(CodeGenOpts->DwarfDebugFlags);
-  Diags.setClient(new ChainedDiagnosticClient(Diags.takeClient(), Logger));
+  Diags.setClient(new ChainedDiagnosticConsumer(Diags.takeClient(), Logger));
 }
 
 void CompilerInstance::createDiagnostics(int Argc, const char* const *Argv,
-                                         DiagnosticClient *Client) {
+                                         DiagnosticConsumer *Client,
+                                         bool ShouldOwnClient,
+                                         bool ShouldCloneClient) {
   Diagnostics = createDiagnostics(getDiagnosticOpts(), Argc, Argv, Client,
+                                  ShouldOwnClient, ShouldCloneClient,
                                   &getCodeGenOpts());
 }
 
-llvm::IntrusiveRefCntPtr<Diagnostic> 
+llvm::IntrusiveRefCntPtr<DiagnosticsEngine> 
 CompilerInstance::createDiagnostics(const DiagnosticOptions &Opts,
                                     int Argc, const char* const *Argv,
-                                    DiagnosticClient *Client,
+                                    DiagnosticConsumer *Client,
+                                    bool ShouldOwnClient,
+                                    bool ShouldCloneClient,
                                     const CodeGenOptions *CodeGenOpts) {
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags(new Diagnostic(DiagID));
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine>
+      Diags(new DiagnosticsEngine(DiagID));
 
   // Create the diagnostic client for reporting errors or for
   // implementing -verify.
-  if (Client)
-    Diags->setClient(Client);
-  else
+  if (Client) {
+    if (ShouldCloneClient)
+      Diags->setClient(Client->clone(*Diags), ShouldOwnClient);
+    else
+      Diags->setClient(Client, ShouldOwnClient);
+  } else
     Diags->setClient(new TextDiagnosticPrinter(llvm::errs(), Opts));
 
   // Chain in -verify checker, if requested.
-  if (Opts.VerifyDiagnostics)
-    Diags->setClient(new VerifyDiagnosticsClient(*Diags, Diags->takeClient()));
+  if (Opts.VerifyDiagnostics) 
+    Diags->setClient(new VerifyDiagnosticConsumer(*Diags));
 
   // Chain in -diagnostic-log-file dumper, if requested.
   if (!Opts.DiagnosticLogFile.empty())
@@ -191,52 +201,50 @@ void CompilerInstance::createSourceManager(FileManager &FileMgr) {
 // Preprocessor
 
 void CompilerInstance::createPreprocessor() {
-  PP = createPreprocessor(getDiagnostics(), getLangOpts(),
-                          getPreprocessorOpts(), getHeaderSearchOpts(),
-                          getDependencyOutputOpts(), getTarget(),
-                          getFrontendOpts(), getSourceManager(),
-                          getFileManager());
-}
-
-Preprocessor *
-CompilerInstance::createPreprocessor(Diagnostic &Diags,
-                                     const LangOptions &LangInfo,
-                                     const PreprocessorOptions &PPOpts,
-                                     const HeaderSearchOptions &HSOpts,
-                                     const DependencyOutputOptions &DepOpts,
-                                     const TargetInfo &Target,
-                                     const FrontendOptions &FEOpts,
-                                     SourceManager &SourceMgr,
-                                     FileManager &FileMgr) {
+  const PreprocessorOptions &PPOpts = getPreprocessorOpts();
+  
   // Create a PTH manager if we are using some form of a token cache.
   PTHManager *PTHMgr = 0;
   if (!PPOpts.TokenCache.empty())
-    PTHMgr = PTHManager::Create(PPOpts.TokenCache, Diags);
-
+    PTHMgr = PTHManager::Create(PPOpts.TokenCache, getDiagnostics());
+  
   // Create the Preprocessor.
-  HeaderSearch *HeaderInfo = new HeaderSearch(FileMgr);
-  Preprocessor *PP = new Preprocessor(Diags, LangInfo, Target,
-                                      SourceMgr, *HeaderInfo, PTHMgr,
-                                      /*OwnsHeaderSearch=*/true);
-
+  HeaderSearch *HeaderInfo = new HeaderSearch(getFileManager());
+  PP = new Preprocessor(getDiagnostics(), getLangOpts(), &getTarget(),
+                        getSourceManager(), *HeaderInfo, *this, PTHMgr,
+                        /*OwnsHeaderSearch=*/true);
+  
   // Note that this is different then passing PTHMgr to Preprocessor's ctor.
   // That argument is used as the IdentifierInfoLookup argument to
   // IdentifierTable's ctor.
   if (PTHMgr) {
-    PTHMgr->setPreprocessor(PP);
+    PTHMgr->setPreprocessor(&*PP);
     PP->setPTHManager(PTHMgr);
   }
-
+  
   if (PPOpts.DetailedRecord)
     PP->createPreprocessingRecord(
-                       PPOpts.DetailedRecordIncludesNestedMacroExpansions);
+                                  PPOpts.DetailedRecordIncludesNestedMacroExpansions);
   
-  InitializePreprocessor(*PP, PPOpts, HSOpts, FEOpts);
-
+  InitializePreprocessor(*PP, PPOpts, getHeaderSearchOpts(), getFrontendOpts());
+  
+  // Set up the module path, including the hash for the
+  // module-creation options.
+  llvm::SmallString<256> SpecificModuleCache(
+                           getHeaderSearchOpts().ModuleCachePath);
+  if (!getHeaderSearchOpts().DisableModuleHash)
+    llvm::sys::path::append(SpecificModuleCache, 
+                            getInvocation().getModuleHash());
+  PP->getHeaderSearchInfo().configureModules(SpecificModuleCache,
+    getPreprocessorOpts().ModuleBuildPath.empty()
+      ? std::string() 
+      : getPreprocessorOpts().ModuleBuildPath.back());
+  
   // Handle generating dependencies, if requested.
+  const DependencyOutputOptions &DepOpts = getDependencyOutputOpts();
   if (!DepOpts.OutputFile.empty())
     AttachDependencyFileGen(*PP, DepOpts);
-
+  
   // Handle generating header include information, if requested.
   if (DepOpts.ShowHeaderIncludes)
     AttachHeaderIncludeGen(*PP);
@@ -247,8 +255,6 @@ CompilerInstance::createPreprocessor(Diagnostic &Diags,
     AttachHeaderIncludeGen(*PP, /*ShowAllHeaders=*/true, OutputPath,
                            /*ShowDepth=*/false);
   }
-
-  return PP;
 }
 
 // ASTContext
@@ -256,7 +262,7 @@ CompilerInstance::createPreprocessor(Diagnostic &Diags,
 void CompilerInstance::createASTContext() {
   Preprocessor &PP = getPreprocessor();
   Context = new ASTContext(getLangOpts(), PP.getSourceManager(),
-                           getTarget(), PP.getIdentifierTable(),
+                           &getTarget(), PP.getIdentifierTable(),
                            PP.getSelectorTable(), PP.getBuiltinInfo(),
                            /*size_reserve=*/ 0);
 }
@@ -289,7 +295,7 @@ CompilerInstance::createPCHExternalASTSource(StringRef Path,
                                              void *DeserializationListener,
                                              bool Preamble) {
   llvm::OwningPtr<ASTReader> Reader;
-  Reader.reset(new ASTReader(PP, &Context,
+  Reader.reset(new ASTReader(PP, Context,
                              Sysroot.empty() ? "" : Sysroot.c_str(),
                              DisablePCHValidation, DisableStatCache));
 
@@ -382,10 +388,10 @@ CompilerInstance::createCodeCompletionConsumer(Preprocessor &PP,
                                           ShowGlobals, OS);
 }
 
-void CompilerInstance::createSema(bool CompleteTranslationUnit,
+void CompilerInstance::createSema(TranslationUnitKind TUKind,
                                   CodeCompleteConsumer *CompletionConsumer) {
   TheSema.reset(new Sema(getPreprocessor(), getASTContext(), getASTConsumer(),
-                         CompleteTranslationUnit, CompletionConsumer));
+                         TUKind, CompletionConsumer));
 }
 
 // Output Files
@@ -536,15 +542,12 @@ bool CompilerInstance::InitializeSourceManager(StringRef InputFile) {
 }
 
 bool CompilerInstance::InitializeSourceManager(StringRef InputFile,
-                                               Diagnostic &Diags,
+                                               DiagnosticsEngine &Diags,
                                                FileManager &FileMgr,
                                                SourceManager &SourceMgr,
                                                const FrontendOptions &Opts) {
-  // Figure out where to get and map in the main file, unless it's already
-  // been created (e.g., by a precompiled preamble).
-  if (!SourceMgr.getMainFileID().isInvalid()) {
-    // Do nothing: the main file has already been set.
-  } else if (InputFile != "-") {
+  // Figure out where to get and map in the main file.
+  if (InputFile != "-") {
     const FileEntry *File = FileMgr.getFile(InputFile);
     if (!File) {
       Diags.Report(diag::err_fe_error_reading) << InputFile;
@@ -640,4 +643,174 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   return !getDiagnostics().getClient()->getNumErrors();
 }
 
+/// \brief Determine the appropriate source input kind based on language
+/// options.
+static InputKind getSourceInputKindFromOptions(const LangOptions &LangOpts) {
+  if (LangOpts.OpenCL)
+    return IK_OpenCL;
+  if (LangOpts.CUDA)
+    return IK_CUDA;
+  if (LangOpts.ObjC1)
+    return LangOpts.CPlusPlus? IK_ObjCXX : IK_ObjC;
+  return LangOpts.CPlusPlus? IK_CXX : IK_C;
+}
+
+/// \brief Compile a module file for the given module name with the given
+/// umbrella header, using the options provided by the importing compiler
+/// instance.
+static void compileModule(CompilerInstance &ImportingInstance,
+                          StringRef ModuleName,
+                          StringRef ModuleFileName,
+                          StringRef UmbrellaHeader) {
+  // Construct a compiler invocation for creating this module.
+  llvm::IntrusiveRefCntPtr<CompilerInvocation> Invocation
+    (new CompilerInvocation(ImportingInstance.getInvocation()));
+  
+  // For any options that aren't intended to affect how a module is built,
+  // reset them to their default values.
+  Invocation->getLangOpts().resetNonModularOptions();
+  Invocation->getPreprocessorOpts().resetNonModularOptions();
+  
+  // Note that this module is part of the module build path, so that we 
+  // can detect cycles in the module graph.
+  Invocation->getPreprocessorOpts().ModuleBuildPath.push_back(ModuleName);
+  
+  // Set up the inputs/outputs so that we build the module from its umbrella
+  // header.
+  FrontendOptions &FrontendOpts = Invocation->getFrontendOpts();
+  FrontendOpts.OutputFile = ModuleFileName.str();
+  FrontendOpts.DisableFree = false;
+  FrontendOpts.Inputs.clear();
+  FrontendOpts.Inputs.push_back(
+    std::make_pair(getSourceInputKindFromOptions(Invocation->getLangOpts()), 
+                                                 UmbrellaHeader));
+  
+  Invocation->getDiagnosticOpts().VerifyDiagnostics = 0;
+  
+  
+  assert(ImportingInstance.getInvocation().getModuleHash() ==
+           Invocation->getModuleHash() && "Module hash mismatch!");
+  
+  // Construct a compiler instance that will be used to actually create the
+  // module.
+  CompilerInstance Instance;
+  Instance.setInvocation(&*Invocation);
+  Instance.createDiagnostics(/*argc=*/0, /*argv=*/0, 
+                             &ImportingInstance.getDiagnosticClient(),
+                             /*ShouldOwnClient=*/true,
+                             /*ShouldCloneClient=*/true);
+
+  // Construct a module-generating action.
+  GeneratePCHAction CreateModuleAction(true);
+  
+  // Execute the action to actually build the module in-place.
+  // FIXME: Need to synchronize when multiple processes do this.
+  Instance.ExecuteAction(CreateModuleAction);
+} 
+
+ModuleKey CompilerInstance::loadModule(SourceLocation ImportLoc, 
+                                       IdentifierInfo &ModuleName,
+                                       SourceLocation ModuleNameLoc) {  
+  // Determine what file we're searching from.
+  SourceManager &SourceMgr = getSourceManager();
+  SourceLocation ExpandedImportLoc = SourceMgr.getExpansionLoc(ImportLoc);
+  const FileEntry *CurFile
+    = SourceMgr.getFileEntryForID(SourceMgr.getFileID(ExpandedImportLoc));
+  if (!CurFile)
+    CurFile = SourceMgr.getFileEntryForID(SourceMgr.getMainFileID());
+
+  // Search for a module with the given name.
+  std::string UmbrellaHeader;
+  std::string ModuleFileName;
+  const FileEntry *ModuleFile
+    = PP->getHeaderSearchInfo().lookupModule(ModuleName.getName(),
+                                             &ModuleFileName,
+                                             &UmbrellaHeader);
+  
+  bool BuildingModule = false;
+  if (!ModuleFile && !UmbrellaHeader.empty()) {
+    // We didn't find the module, but there is an umbrella header that
+    // can be used to create the module file. Create a separate compilation
+    // module to do so.
+    
+    // Check whether there is a cycle in the module graph.
+    SmallVectorImpl<std::string> &ModuleBuildPath
+      = getPreprocessorOpts().ModuleBuildPath;
+    SmallVectorImpl<std::string>::iterator Pos 
+      = std::find(ModuleBuildPath.begin(), ModuleBuildPath.end(),
+                  ModuleName.getName());
+    if (Pos != ModuleBuildPath.end()) {
+      llvm::SmallString<256> CyclePath;
+      for (; Pos != ModuleBuildPath.end(); ++Pos) {
+        CyclePath += *Pos;
+        CyclePath += " -> ";
+      }
+      CyclePath += ModuleName.getName();
+      
+      getDiagnostics().Report(ModuleNameLoc, diag::err_module_cycle)
+        << ModuleName.getName() << CyclePath;
+      return 0;
+    }
+    
+    getDiagnostics().Report(ModuleNameLoc, diag::warn_module_build)
+      << ModuleName.getName();
+    BuildingModule = true;
+    compileModule(*this, ModuleName.getName(), ModuleFileName, UmbrellaHeader);
+    ModuleFile = PP->getHeaderSearchInfo().lookupModule(ModuleName.getName());
+  }
+  
+  if (!ModuleFile) {
+    getDiagnostics().Report(ModuleNameLoc, 
+                            BuildingModule? diag::err_module_not_built
+                                          : diag::err_module_not_found)
+      << ModuleName.getName()
+      << SourceRange(ImportLoc, ModuleNameLoc);
+    return 0;
+  }
+  
+  // If we don't already have an ASTReader, create one now.
+  if (!ModuleManager) {
+    if (!hasASTContext())
+      createASTContext();
+
+    std::string Sysroot = getHeaderSearchOpts().Sysroot;
+    const PreprocessorOptions &PPOpts = getPreprocessorOpts();
+    ModuleManager = new ASTReader(getPreprocessor(), *Context,
+                                  Sysroot.empty() ? "" : Sysroot.c_str(),
+                                  PPOpts.DisablePCHValidation, 
+                                  PPOpts.DisableStatCache);
+    if (hasASTConsumer()) {
+      ModuleManager->setDeserializationListener(
+        getASTConsumer().GetASTDeserializationListener());
+      getASTContext().setASTMutationListener(
+        getASTConsumer().GetASTMutationListener());
+    }
+    llvm::OwningPtr<ExternalASTSource> Source;
+    Source.reset(ModuleManager);
+    getASTContext().setExternalSource(Source);
+    if (hasSema())
+      ModuleManager->InitializeSema(getSema());
+    if (hasASTConsumer())
+      ModuleManager->StartTranslationUnit(&getASTConsumer());
+  }
+  
+  // Try to load the module we found.
+  switch (ModuleManager->ReadAST(ModuleFile->getName(),
+                                 serialization::MK_Module)) {
+  case ASTReader::Success:
+    break;
+
+  case ASTReader::IgnorePCH:
+    // FIXME: The ASTReader will already have complained, but can we showhorn
+    // that diagnostic information into a more useful form?
+    return 0;
+      
+  case ASTReader::Failure:
+    // Already complained.
+    return 0;
+  }
+  
+  // FIXME: The module file's FileEntry makes a poor key indeed!
+  return (ModuleKey)ModuleFile;
+}
 

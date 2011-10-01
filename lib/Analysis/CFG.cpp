@@ -374,6 +374,7 @@ private:
 
   void autoCreateBlock() { if (!Block) Block = createBlock(); }
   CFGBlock *createBlock(bool add_successor = true);
+  CFGBlock *createNoReturnBlock();
 
   CFGBlock *addStmt(Stmt *S) {
     return Visit(S, AddStmtChoice::AlwaysAdd);
@@ -413,11 +414,10 @@ private:
   void appendTemporaryDtor(CFGBlock *B, CXXBindTemporaryExpr *E) {
     B->appendTemporaryDtor(E, cfg->getBumpVectorContext());
   }
+  void appendAutomaticObjDtor(CFGBlock *B, VarDecl *VD, Stmt *S) {
+    B->appendAutomaticObjDtor(VD, S, cfg->getBumpVectorContext());
+  }
 
-  void insertAutomaticObjDtors(CFGBlock *Blk, CFGBlock::iterator I,
-    LocalScope::const_iterator B, LocalScope::const_iterator E, Stmt *S);
-  void appendAutomaticObjDtors(CFGBlock *Blk, LocalScope::const_iterator B,
-      LocalScope::const_iterator E, Stmt *S);
   void prependAutomaticObjDtorsWithTerminator(CFGBlock *Blk,
       LocalScope::const_iterator B, LocalScope::const_iterator E);
 
@@ -598,6 +598,16 @@ CFGBlock *CFGBuilder::createBlock(bool add_successor) {
   return B;
 }
 
+/// createNoReturnBlock - Used to create a block is a 'noreturn' point in the
+/// CFG. It is *not* connected to the current (global) successor, and instead
+/// directly tied to the exit block in order to be reachable.
+CFGBlock *CFGBuilder::createNoReturnBlock() {
+  CFGBlock *B = createBlock(false);
+  B->setHasNoReturnElement();
+  addSuccessor(B, &cfg->getExit());
+  return B;
+}
+
 /// addInitializer - Add C++ base or member initializer element to CFG.
 CFGBlock *CFGBuilder::addInitializer(CXXCtorInitializer *I) {
   if (!BuildOpts.AddInitializers)
@@ -647,8 +657,34 @@ void CFGBuilder::addAutomaticObjDtors(LocalScope::const_iterator B,
   if (B == E)
     return;
 
-  autoCreateBlock();
-  appendAutomaticObjDtors(Block, B, E, S);
+  CFGBlock::iterator InsertPos;
+
+  // We need to append the destructors in reverse order, but any one of them
+  // may be a no-return destructor which changes the CFG. As a result, buffer
+  // this sequence up and replay them in reverse order when appending onto the
+  // CFGBlock(s).
+  SmallVector<VarDecl*, 10> Decls;
+  Decls.reserve(B.distance(E));
+  for (LocalScope::const_iterator I = B; I != E; ++I)
+    Decls.push_back(*I);
+
+  for (SmallVectorImpl<VarDecl*>::reverse_iterator I = Decls.rbegin(),
+                                                   E = Decls.rend();
+       I != E; ++I) {
+    // If this destructor is marked as a no-return destructor, we need to
+    // create a new block for the destructor which does not have as a successor
+    // anything built thus far: control won't flow out of this block.
+    QualType Ty = (*I)->getType().getNonReferenceType();
+    if (const ArrayType *AT = Context->getAsArrayType(Ty))
+      Ty = AT->getElementType();
+    const CXXDestructorDecl *Dtor = Ty->getAsCXXRecordDecl()->getDestructor();
+    if (cast<FunctionType>(Dtor->getType())->getNoReturnAttr())
+      Block = createNoReturnBlock();
+    else
+      autoCreateBlock();
+
+    appendAutomaticObjDtor(Block, *I, S);
+  }
 }
 
 /// addImplicitDtorsForDestructor - Add implicit destructors generated for
@@ -723,9 +759,7 @@ void CFGBuilder::addLocalScopeForStmt(Stmt *S) {
   if (CompoundStmt *CS = dyn_cast<CompoundStmt>(S)) {
     for (CompoundStmt::body_iterator BI = CS->body_begin(), BE = CS->body_end()
         ; BI != BE; ++BI) {
-      Stmt *SI = *BI;
-      if (LabelStmt *LS = dyn_cast<LabelStmt>(SI))
-        SI = LS->getSubStmt();
+      Stmt *SI = (*BI)->stripLabelLikeStatements();
       if (DeclStmt *DS = dyn_cast<DeclStmt>(SI))
         Scope = addLocalScopeForDeclStmt(DS, Scope);
     }
@@ -734,9 +768,7 @@ void CFGBuilder::addLocalScopeForStmt(Stmt *S) {
 
   // For any other statement scope will be implicit and as such will be
   // interesting only for DeclStmt.
-  if (LabelStmt *LS = dyn_cast<LabelStmt>(S))
-    S = LS->getSubStmt();
-  if (DeclStmt *DS = dyn_cast<DeclStmt>(S))
+  if (DeclStmt *DS = dyn_cast<DeclStmt>(S->stripLabelLikeStatements()))
     addLocalScopeForDeclStmt(DS);
 }
 
@@ -811,34 +843,21 @@ void CFGBuilder::addLocalScopeAndDtors(Stmt *S) {
   addAutomaticObjDtors(ScopePos, scopeBeginPos, S);
 }
 
-/// insertAutomaticObjDtors - Insert destructor CFGElements for variables with
-/// automatic storage duration to CFGBlock's elements vector. Insertion will be
-/// performed in place specified with iterator.
-void CFGBuilder::insertAutomaticObjDtors(CFGBlock *Blk, CFGBlock::iterator I,
-    LocalScope::const_iterator B, LocalScope::const_iterator E, Stmt *S) {
-  BumpVectorContext &C = cfg->getBumpVectorContext();
-  I = Blk->beginAutomaticObjDtorsInsert(I, B.distance(E), C);
-  while (B != E)
-    I = Blk->insertAutomaticObjDtor(I, *B++, S);
-}
-
-/// appendAutomaticObjDtors - Append destructor CFGElements for variables with
-/// automatic storage duration to CFGBlock's elements vector. Elements will be
-/// appended to physical end of the vector which happens to be logical
-/// beginning.
-void CFGBuilder::appendAutomaticObjDtors(CFGBlock *Blk,
-    LocalScope::const_iterator B, LocalScope::const_iterator E, Stmt *S) {
-  insertAutomaticObjDtors(Blk, Blk->begin(), B, E, S);
-}
-
 /// prependAutomaticObjDtorsWithTerminator - Prepend destructor CFGElements for
 /// variables with automatic storage duration to CFGBlock's elements vector.
 /// Elements will be prepended to physical beginning of the vector which
 /// happens to be logical end. Use blocks terminator as statement that specifies
 /// destructors call site.
+/// FIXME: This mechanism for adding automatic destructors doesn't handle
+/// no-return destructors properly.
 void CFGBuilder::prependAutomaticObjDtorsWithTerminator(CFGBlock *Blk,
     LocalScope::const_iterator B, LocalScope::const_iterator E) {
-  insertAutomaticObjDtors(Blk, Blk->end(), B, E, Blk->getTerminator());
+  BumpVectorContext &C = cfg->getBumpVectorContext();
+  CFGBlock::iterator InsertPos
+    = Blk->beginAutomaticObjDtorsInsert(Blk->end(), B.distance(E), C);
+  for (LocalScope::const_iterator I = B; I != E; ++I)
+    InsertPos = Blk->insertAutomaticObjDtor(InsertPos, *I,
+                                            Blk->getTerminator());
 }
 
 /// Visit - Walk the subtree of a statement and add extra
@@ -1193,13 +1212,13 @@ CFGBlock *CFGBuilder::VisitCallExpr(CallExpr *C, AddStmtChoice asc) {
       return 0;
   }
 
-  Block = createBlock(!NoReturn);
+  if (NoReturn)
+    Block = createNoReturnBlock();
+  else
+    Block = createBlock();
+
   appendStmt(Block, C);
 
-  if (NoReturn) {
-    // Wire this to the exit block directly.
-    addSuccessor(Block, &cfg->getExit());
-  }
   if (AddEHEdge) {
     // Add exceptional edges.
     if (TryTerminatedBlock)
@@ -1807,7 +1826,6 @@ CFGBlock *CFGBuilder::VisitObjCForCollectionStmt(ObjCForCollectionStmt *S) {
 
   // Build the condition blocks.
   CFGBlock *ExitConditionBlock = createBlock(false);
-  CFGBlock *EntryConditionBlock = ExitConditionBlock;
 
   // Set the terminator for the "exit" condition block.
   ExitConditionBlock->setTerminator(S);
@@ -1821,7 +1839,8 @@ CFGBlock *CFGBuilder::VisitObjCForCollectionStmt(ObjCForCollectionStmt *S) {
   // Walk the 'element' expression to see if there are any side-effects.  We
   // generate new blocks as necessary.  We DON'T add the statement by default to
   // the CFG unless it contains control-flow.
-  EntryConditionBlock = Visit(S->getElement(), AddStmtChoice::NotAlwaysAdd);
+  CFGBlock *EntryConditionBlock = Visit(S->getElement(),
+                                        AddStmtChoice::NotAlwaysAdd);
   if (Block) {
     if (badCFG)
       return 0;
@@ -2204,16 +2223,6 @@ CFGBlock *CFGBuilder::VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E,
          VA != 0; VA = FindVA(VA->getElementType().getTypePtr()))
       lastBlock = addStmt(VA->getSizeExpr());
   }
-  else {
-    // For sizeof(x), where 'x' is a VLA, we should include the computation
-    // of the lvalue of 'x'.
-    Expr *subEx = E->getArgumentExpr();
-    if (subEx->getType()->isVariableArrayType()) {
-      assert(subEx->isLValue());
-      lastBlock = addStmt(subEx);
-    }
-  }
-
   return lastBlock;
 }
 
@@ -2503,8 +2512,8 @@ CFGBlock *CFGBuilder::VisitCXXTryStmt(CXXTryStmt *Terminator) {
   Succ = TrySuccessor;
 
   // Save the current "try" context.
-  SaveAndRestore<CFGBlock*> save_try(TryTerminatedBlock);
-  TryTerminatedBlock = NewTryTerminatedBlock;
+  SaveAndRestore<CFGBlock*> save_try(TryTerminatedBlock, NewTryTerminatedBlock);
+  cfg->addTryDispatchBlock(TryTerminatedBlock);
 
   assert(Terminator->getTryBlock() && "try must contain a non-NULL body");
   Block = NULL;
@@ -2875,7 +2884,16 @@ CFGBlock *CFGBuilder::VisitCXXBindTemporaryExprForTemporaryDtors(
   if (!BindToTemporary) {
     // If lifetime of temporary is not prolonged (by assigning to constant
     // reference) add destructor for it.
-    autoCreateBlock();
+
+    // If the destructor is marked as a no-return destructor, we need to create
+    // a new block for the destructor which does not have as a successor
+    // anything built thus far. Control won't flow out of this block.
+    const CXXDestructorDecl *Dtor = E->getTemporary()->getDestructor();
+    if (cast<FunctionType>(Dtor->getType())->getNoReturnAttr())
+      Block = createNoReturnBlock();
+    else
+      autoCreateBlock();
+
     appendTemporaryDtor(Block, E);
     B = Block;
   }
@@ -3024,17 +3042,17 @@ namespace {
   typedef llvm::DenseMap<const Stmt*,unsigned> BlkExprMapTy;
 }
 
-static void FindSubExprAssignments(Stmt *S,
-                                   llvm::SmallPtrSet<Expr*,50>& Set) {
+static void FindSubExprAssignments(const Stmt *S,
+                                   llvm::SmallPtrSet<const Expr*,50>& Set) {
   if (!S)
     return;
 
-  for (Stmt::child_range I = S->children(); I; ++I) {
-    Stmt *child = *I;
+  for (Stmt::const_child_range I = S->children(); I; ++I) {
+    const Stmt *child = *I;
     if (!child)
       continue;
 
-    if (BinaryOperator* B = dyn_cast<BinaryOperator>(child))
+    if (const BinaryOperator* B = dyn_cast<BinaryOperator>(child))
       if (B->isAssignmentOp()) Set.insert(B);
 
     FindSubExprAssignments(child, Set);
@@ -3048,7 +3066,7 @@ static BlkExprMapTy* PopulateBlkExprMap(CFG& cfg) {
   // assignments that we want to *possibly* register as a block-level
   // expression.  Basically, if an assignment occurs both in a subexpression and
   // at the block-level, it is a block-level expression.
-  llvm::SmallPtrSet<Expr*,50> SubExprAssignments;
+  llvm::SmallPtrSet<const Expr*,50> SubExprAssignments;
 
   for (CFG::iterator I=cfg.begin(), E=cfg.end(); I != E; ++I)
     for (CFGBlock::iterator BI=(*I)->begin(), EI=(*I)->end(); BI != EI; ++BI)
@@ -3064,10 +3082,10 @@ static BlkExprMapTy* PopulateBlkExprMap(CFG& cfg) {
       const CFGStmt *CS = BI->getAs<CFGStmt>();
       if (!CS)
         continue;
-      if (Expr *Exp = dyn_cast<Expr>(CS->getStmt())) {
+      if (const Expr *Exp = dyn_cast<Expr>(CS->getStmt())) {
         assert((Exp->IgnoreParens() == Exp) && "No parens on block-level exps");
 
-        if (BinaryOperator* B = dyn_cast<BinaryOperator>(Exp)) {
+        if (const BinaryOperator* B = dyn_cast<BinaryOperator>(Exp)) {
           // Assignment expressions that are not nested within another
           // expression are really "statements" whose value is never used by
           // another expression.
@@ -3355,7 +3373,7 @@ public:
         OS << " && ...";
         return;
       default:
-        assert(false && "Invalid logical operator.");
+        llvm_unreachable("Invalid logical operator.");
     }
   }
 
@@ -3368,13 +3386,13 @@ public:
 static void print_elem(raw_ostream &OS, StmtPrinterHelper* Helper,
                        const CFGElement &E) {
   if (const CFGStmt *CS = E.getAs<CFGStmt>()) {
-    Stmt *S = CS->getStmt();
+    const Stmt *S = CS->getStmt();
     
     if (Helper) {
 
       // special printing for statement-expressions.
-      if (StmtExpr *SE = dyn_cast<StmtExpr>(S)) {
-        CompoundStmt *Sub = SE->getSubStmt();
+      if (const StmtExpr *SE = dyn_cast<StmtExpr>(S)) {
+        const CompoundStmt *Sub = SE->getSubStmt();
 
         if (Sub->children()) {
           OS << "({ ... ; ";
@@ -3384,7 +3402,7 @@ static void print_elem(raw_ostream &OS, StmtPrinterHelper* Helper,
         }
       }
       // special printing for comma expressions.
-      if (BinaryOperator* B = dyn_cast<BinaryOperator>(S)) {
+      if (const BinaryOperator* B = dyn_cast<BinaryOperator>(S)) {
         if (B->getOpcode() == BO_Comma) {
           OS << "... , ";
           Helper->handledStmt(B->getRHS(),OS);
@@ -3503,7 +3521,7 @@ static void print_block(raw_ostream &OS, const CFG* cfg,
       OS << ")";
 
     } else
-      assert(false && "Invalid label statement in CFGBlock.");
+      llvm_unreachable("Invalid label statement in CFGBlock.");
 
     OS << ":\n";
   }

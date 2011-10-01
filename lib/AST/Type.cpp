@@ -839,14 +839,16 @@ Type::ScalarTypeKind Type::getScalarTypeKind() const {
   const Type *T = CanonicalType.getTypePtr();
   if (const BuiltinType *BT = dyn_cast<BuiltinType>(T)) {
     if (BT->getKind() == BuiltinType::Bool) return STK_Bool;
-    if (BT->getKind() == BuiltinType::NullPtr) return STK_Pointer;
+    if (BT->getKind() == BuiltinType::NullPtr) return STK_CPointer;
     if (BT->isInteger()) return STK_Integral;
     if (BT->isFloatingPoint()) return STK_Floating;
     llvm_unreachable("unknown scalar builtin type");
-  } else if (isa<PointerType>(T) ||
-             isa<BlockPointerType>(T) ||
-             isa<ObjCObjectPointerType>(T)) {
-    return STK_Pointer;
+  } else if (isa<PointerType>(T)) {
+    return STK_CPointer;
+  } else if (isa<BlockPointerType>(T)) {
+    return STK_BlockPointer;
+  } else if (isa<ObjCObjectPointerType>(T)) {
+    return STK_ObjCObjectPointer;
   } else if (isa<SliceType>(T)) {
     return STK_Slice;
   } else if (isa<MemberPointerType>(T)) {
@@ -861,7 +863,6 @@ Type::ScalarTypeKind Type::getScalarTypeKind() const {
   }
 
   llvm_unreachable("unknown scalar type");
-  return STK_Pointer;
 }
 
 /// \brief Determines whether the type is a C++ aggregate type or C
@@ -1207,7 +1208,7 @@ bool Type::isStandardLayoutType() const {
 }
 
 // This is effectively the intersection of isTrivialType and
-// isStandardLayoutType. We implement it dircetly to avoid redundant
+// isStandardLayoutType. We implement it directly to avoid redundant
 // conversions from a type to a CXXRecordDecl.
 bool QualType::isCXX11PODType(ASTContext &Context) const {
   const Type *ty = getTypePtr();
@@ -1475,10 +1476,10 @@ const char *Type::getTypeClassName() const {
   return 0;
 }
 
-const char *BuiltinType::getName(const LangOptions &LO) const {
+const char *BuiltinType::getName(const PrintingPolicy &Policy) const {
   switch (getKind()) {
   case Void:              return "void";
-  case Bool:              return LO.Bool ? "bool" : "_Bool";
+  case Bool:              return Policy.Bool ? "bool" : "_Bool";
   case Char_S:            return "char";
   case Char_U:            return "char";
   case SChar:             return "signed char";
@@ -1493,9 +1494,9 @@ const char *BuiltinType::getName(const LangOptions &LO) const {
   case ULong:             return "unsigned long";
   case ULongLong:         return "unsigned long long";
   case UInt128:           return "__uint128_t";
-  case Float:             return LO.Cayley ? "flt"  : "float";
-  case Double:            return LO.Cayley ? "dbl"  : "double";
-  case LongDouble:        return LO.Cayley ? "quad" : "long double";
+  case Float:             return Policy.LangOpts.Cayley ? "flt"  : "float";
+  case Double:            return Policy.LangOpts.Cayley ? "dbl"  : "double";
+  case LongDouble:        return Policy.LangOpts.Cayley ? "quad" : "long double";
   case WChar_S:
   case WChar_U:           return "wchar_t";
   case Char16:            return "char16_t";
@@ -2286,7 +2287,7 @@ QualType::DestructionKind QualType::isDestructedTypeImpl(QualType type) {
   return DK_none;
 }
 
-bool QualType::hasTrivialCopyAssignment(ASTContext &Context) const {
+bool QualType::hasTrivialAssignment(ASTContext &Context, bool Copying) const {
   switch (getObjCLifetime()) {
   case Qualifiers::OCL_None:
     break;
@@ -2302,7 +2303,8 @@ bool QualType::hasTrivialCopyAssignment(ASTContext &Context) const {
   
   if (const CXXRecordDecl *Record 
             = getTypePtr()->getBaseElementTypeUnsafe()->getAsCXXRecordDecl())
-    return Record->hasTrivialCopyAssignment();
+    return Copying ? Record->hasTrivialCopyAssignment() :
+                     Record->hasTrivialMoveAssignment();
   
   return true;
 }

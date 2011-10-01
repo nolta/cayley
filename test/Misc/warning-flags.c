@@ -17,16 +17,14 @@ This test serves two purposes:
 
 The list of warnings below should NEVER grow.  It should gradually shrink to 0.
 
-CHECK: Warnings without flags (312):
-CHECK-NEXT:   auto_storage_class
+CHECK: Warnings without flags (304):
 CHECK-NEXT:   backslash_newline_space
 CHECK-NEXT:   charize_microsoft_ext
 CHECK-NEXT:   ext_anon_param_requires_type_specifier
 CHECK-NEXT:   ext_anonymous_struct_union_qualified
 CHECK-NEXT:   ext_array_init_copy
+CHECK-NEXT:   ext_auto_storage_class
 CHECK-NEXT:   ext_binary_literal
-CHECK-NEXT:   ext_c1x_generic_selection
-CHECK-NEXT:   ext_c1x_static_assert
 CHECK-NEXT:   ext_c99_array_usage
 CHECK-NEXT:   ext_c99_compound_literal
 CHECK-NEXT:   ext_c99_variable_decl_in_for_loop
@@ -68,7 +66,6 @@ CHECK-NEXT:   ext_invalid_sign_spec
 CHECK-NEXT:   ext_missing_declspec
 CHECK-NEXT:   ext_missing_varargs_arg
 CHECK-NEXT:   ext_missing_whitespace_after_macro_name
-CHECK-NEXT:   ext_nested_pointer_qualifier_mismatch
 CHECK-NEXT:   ext_new_paren_array_nonconst
 CHECK-NEXT:   ext_nonstandard_escape
 CHECK-NEXT:   ext_offsetof_extended_field_designator
@@ -101,7 +98,6 @@ CHECK-NEXT:   ext_typecheck_comparison_of_pointer_integer
 CHECK-NEXT:   ext_typecheck_cond_incompatible_operands
 CHECK-NEXT:   ext_typecheck_cond_incompatible_operands_nonstandard
 CHECK-NEXT:   ext_typecheck_cond_one_void
-CHECK-NEXT:   ext_typecheck_convert_discards_qualifiers
 CHECK-NEXT:   ext_typecheck_convert_int_pointer
 CHECK-NEXT:   ext_typecheck_convert_pointer_int
 CHECK-NEXT:   ext_typecheck_convert_pointer_void_func
@@ -219,7 +215,6 @@ CHECK-NEXT:   warn_instance_method_on_class_found
 CHECK-NEXT:   warn_integer_too_large
 CHECK-NEXT:   warn_integer_too_large_for_signed
 CHECK-NEXT:   warn_invalid_asm_cast_lvalue
-CHECK-NEXT:   warn_ivar_use_hidden
 CHECK-NEXT:   warn_label_attribute_not_unused
 CHECK-NEXT:   warn_many_braces_around_scalar_init
 CHECK-NEXT:   warn_maynot_respond
@@ -252,7 +247,6 @@ CHECK-NEXT:   warn_pointer_attribute_wrong_type
 CHECK-NEXT:   warn_pp_convert_lhs_to_positive
 CHECK-NEXT:   warn_pp_convert_rhs_to_positive
 CHECK-NEXT:   warn_pp_expr_overflow
-CHECK-NEXT:   warn_pp_file_not_found
 CHECK-NEXT:   warn_pp_line_decimal
 CHECK-NEXT:   warn_pragma_align_expected_equal
 CHECK-NEXT:   warn_pragma_align_invalid_option
@@ -312,8 +306,6 @@ CHECK-NEXT:   warn_transparent_union_attribute_floating
 CHECK-NEXT:   warn_transparent_union_attribute_not_definition
 CHECK-NEXT:   warn_transparent_union_attribute_zero_fields
 CHECK-NEXT:   warn_transparent_union_nonpointer
-CHECK-NEXT:   warn_typecheck_cond_incompatible_pointers
-CHECK-NEXT:   warn_typecheck_cond_pointer_integer_mismatch
 CHECK-NEXT:   warn_typecheck_function_qualifiers
 CHECK-NEXT:   warn_ucn_escape_too_large
 CHECK-NEXT:   warn_ucn_not_valid_in_c89
@@ -323,8 +315,8 @@ CHECK-NEXT:   warn_undef_interface_suggest
 CHECK-NEXT:   warn_undef_protocolref
 CHECK-NEXT:   warn_undefined_internal
 CHECK-NEXT:   warn_uninit_val
+CHECK-NEXT:   warn_unknown_analyzer_checker
 CHECK-NEXT:   warn_unknown_method_family
-CHECK-NEXT:   warn_unkwown_analyzer_checker
 CHECK-NEXT:   warn_unterminated_char
 CHECK-NEXT:   warn_unterminated_string
 CHECK-NEXT:   warn_use_out_of_scope_declaration

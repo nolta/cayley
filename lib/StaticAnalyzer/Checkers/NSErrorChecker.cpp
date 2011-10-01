@@ -72,8 +72,10 @@ void NSErrorMethodChecker::checkASTDecl(const ObjCMethodDecl *D,
     const char *err = "Method accepting NSError** "
         "should have a non-void return value to indicate whether or not an "
         "error occurred";
+    PathDiagnosticLocation L =
+      PathDiagnosticLocation::create(D, BR.getSourceManager());
     BR.EmitBasicReport("Bad return type when passing NSError**",
-                       "Coding conventions (Apple)", err, D->getLocation());
+                       "Coding conventions (Apple)", err, L);
   }
 }
 
@@ -118,8 +120,10 @@ void CFErrorFunctionChecker::checkASTDecl(const FunctionDecl *D,
     const char *err = "Function accepting CFErrorRef* "
         "should have a non-void return value to indicate whether or not an "
         "error occurred";
+    PathDiagnosticLocation L =
+      PathDiagnosticLocation::create(D, BR.getSourceManager());
     BR.EmitBasicReport("Bad return type when passing CFErrorRef*",
-                       "Coding conventions (Apple)", err, D->getLocation());
+                       "Coding conventions (Apple)", err, L);
   }
 }
 
@@ -277,7 +281,7 @@ void NSOrCFErrorDerefChecker::checkEvent(ImplicitNullDerefEvent event) const {
     bug = new NSErrorDerefBug();
   else
     bug = new CFErrorDerefBug();
-  EnhancedBugReport *report = new EnhancedBugReport(*bug, os.str(),
+  BugReport *report = new BugReport(*bug, os.str(),
                                                     event.SinkNode);
   BR.EmitReport(report);
 }

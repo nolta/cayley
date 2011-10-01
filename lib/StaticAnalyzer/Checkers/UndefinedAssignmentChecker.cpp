@@ -74,10 +74,10 @@ void UndefinedAssignmentChecker::checkBind(SVal location, SVal val,
     break;
   }
 
-  EnhancedBugReport *R = new EnhancedBugReport(*BT, str, N);
+  BugReport *R = new BugReport(*BT, str, N);
   if (ex) {
     R->addRange(ex->getSourceRange());
-    R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, ex);
+    R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N, ex));
   }
   C.EmitReport(R);
 }

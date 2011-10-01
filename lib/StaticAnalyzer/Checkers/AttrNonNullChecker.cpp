@@ -100,16 +100,15 @@ void AttrNonNullChecker::checkPreStmt(const CallExpr *CE,
           BT.reset(new BugType("Argument with 'nonnull' attribute passed null",
                                "API"));
 
-        EnhancedBugReport *R =
-          new EnhancedBugReport(*BT,
-                                "Null pointer passed as an argument to a "
-                                "'nonnull' parameter", errorNode);
+        BugReport *R =
+          new BugReport(*BT, "Null pointer passed as an argument to a "
+                             "'nonnull' parameter", errorNode);
 
         // Highlight the range of the argument that was null.
         const Expr *arg = *I;
         R->addRange(arg->getSourceRange());
-        R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, arg);
-
+        R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(errorNode,
+                                                                   arg));
         // Emit the bug report.
         C.EmitReport(R);
       }

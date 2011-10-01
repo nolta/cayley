@@ -76,8 +76,13 @@ SourceRange StackAddrEscapeChecker::GenName(raw_ostream &os,
        << VR->getString() << '\'';
     range = VR->getDecl()->getSourceRange();
   }
+  else if (const CXXTempObjectRegion *TOR = dyn_cast<CXXTempObjectRegion>(R)) {
+    os << "stack memory associated with temporary object of type '"
+       << TOR->getValueType().getAsString() << '\'';
+    range = TOR->getExpr()->getSourceRange();
+  }
   else {
-    assert(false && "Invalid region in ReturnStackAddressChecker.");
+    llvm_unreachable("Invalid region in ReturnStackAddressChecker.");
   } 
   
   return range;
@@ -99,7 +104,7 @@ void StackAddrEscapeChecker::EmitStackError(CheckerContext &C, const MemRegion *
   llvm::raw_svector_ostream os(buf);
   SourceRange range = GenName(os, R, C.getSourceManager());
   os << " returned to caller";
-  RangedBugReport *report = new RangedBugReport(*BT_returnstack, os.str(), N);
+  BugReport *report = new BugReport(*BT_returnstack, os.str(), N);
   report->addRange(RetE->getSourceRange());
   if (range.isValid())
     report->addRange(range);
@@ -202,9 +207,9 @@ void StackAddrEscapeChecker::checkEndPath(EndOfFunctionNodeBuilder &B,
                                 Eng.getContext().getSourceManager());
     os << " is still referred to by the global variable '";
     const VarRegion *VR = cast<VarRegion>(cb.V[i].first->getBaseRegion());
-    os << VR->getDecl()->getNameAsString() 
+    os << VR->getDecl()
        << "' upon returning to the caller.  This will be a dangling reference";
-    RangedBugReport *report = new RangedBugReport(*BT_stackleak, os.str(), N);
+    BugReport *report = new BugReport(*BT_stackleak, os.str(), N);
     if (range.isValid())
       report->addRange(range);
 

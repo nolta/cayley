@@ -43,7 +43,7 @@ static bool StatSwitch = false;
 
 const char *Decl::getDeclKindName() const {
   switch (DeclKind) {
-  default: assert(0 && "Declaration not in DeclNodes.inc!");
+  default: llvm_unreachable("Declaration not in DeclNodes.inc!");
 #define DECL(DERIVED, BASE) case DERIVED: return #DERIVED;
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
@@ -62,7 +62,7 @@ void Decl::setInvalidDecl(bool Invalid) {
 
 const char *DeclContext::getDeclKindName() const {
   switch (DeclKind) {
-  default: assert(0 && "Declaration context not in DeclNodes.inc!");
+  default: llvm_unreachable("Declaration context not in DeclNodes.inc!");
 #define DECL(DERIVED, BASE) case Decl::DERIVED: return #DERIVED;
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
@@ -100,7 +100,7 @@ void Decl::PrintStats() {
 
 void Decl::add(Kind k) {
   switch (k) {
-  default: assert(0 && "Declaration not in DeclNodes.inc!");
+  default: llvm_unreachable("Declaration not in DeclNodes.inc!");
 #define DECL(DERIVED, BASE) case DERIVED: ++n##DERIVED##s; break;
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
@@ -133,14 +133,18 @@ bool Decl::isFunctionOrFunctionTemplate() const {
   return isa<FunctionDecl>(this) || isa<FunctionTemplateDecl>(this);
 }
 
-bool Decl::isDefinedOutsideFunctionOrMethod() const {
-  for (const DeclContext *DC = getDeclContext(); 
-       DC && !DC->isTranslationUnit(); 
+bool Decl::isTemplateDecl() const {
+  return isa<TemplateDecl>(this);
+}
+
+const DeclContext *Decl::getParentFunctionOrMethod() const {
+  for (const DeclContext *DC = getDeclContext();
+       DC && !DC->isTranslationUnit() && !DC->isNamespace(); 
        DC = DC->getParent())
     if (DC->isFunctionOrMethod())
-      return false;
+      return DC;
 
-  return true;
+  return 0;
 }
 
 
@@ -265,13 +269,13 @@ bool Decl::isReferenced() const {
 static AvailabilityResult CheckAvailability(ASTContext &Context,
                                             const AvailabilityAttr *A,
                                             std::string *Message) {
-  StringRef TargetPlatform = Context.Target.getPlatformName();
+  StringRef TargetPlatform = Context.getTargetInfo().getPlatformName();
   StringRef PrettyPlatformName
     = AvailabilityAttr::getPrettyPlatformName(TargetPlatform);
   if (PrettyPlatformName.empty())
     PrettyPlatformName = TargetPlatform;
 
-  VersionTuple TargetMinVersion = Context.Target.getPlatformMinVersion();
+  VersionTuple TargetMinVersion = Context.getTargetInfo().getPlatformMinVersion();
   if (TargetMinVersion.empty())
     return AR_Available;
 
@@ -567,8 +571,7 @@ Decl *Decl::castFromDeclContext (const DeclContext *D) {
       if (DK >= first##NAME && DK <= last##NAME) \
         return static_cast<NAME##Decl*>(const_cast<DeclContext*>(D));
 #include "clang/AST/DeclNodes.inc"
-      assert(false && "a decl that inherits DeclContext isn't handled");
-      return 0;
+      llvm_unreachable("a decl that inherits DeclContext isn't handled");
   }
 }
 
@@ -587,8 +590,7 @@ DeclContext *Decl::castToDeclContext(const Decl *D) {
       if (DK >= first##NAME && DK <= last##NAME)                  \
         return static_cast<NAME##Decl*>(const_cast<Decl*>(D));
 #include "clang/AST/DeclNodes.inc"
-      assert(false && "a decl that inherits DeclContext isn't handled");
-      return 0;
+      llvm_unreachable("a decl that inherits DeclContext isn't handled");
   }
 }
 
@@ -628,7 +630,8 @@ void Decl::CheckAccessDeclContext() const {
       isa<ParmVarDecl>(this) ||
       // FIXME: a ClassTemplateSpecialization or CXXRecordDecl can have
       // AS_none as access specifier.
-      isa<CXXRecordDecl>(this))
+      isa<CXXRecordDecl>(this) ||
+      isa<ClassScopeFunctionSpecializationDecl>(this))
     return;
 
   assert(Access != AS_none &&
@@ -840,6 +843,22 @@ DeclContext::LoadLexicalDeclsFromExternalStorage() const {
   // Notify that we have a DeclContext that is initializing.
   ExternalASTSource::Deserializing ADeclContext(Source);
 
+  // We may have already loaded just the fields of this record, in which case
+  // we remove all of the fields from the list. The fields will be reloaded
+  // from the external source as part of re-establishing the context.
+  if (const RecordDecl *RD = dyn_cast<RecordDecl>(this)) {
+    if (RD->LoadedFieldsFromExternalStorage) {
+      while (FirstDecl && isa<FieldDecl>(FirstDecl)) {
+        Decl *Next = FirstDecl->NextDeclInContext;
+        FirstDecl->NextDeclInContext = 0;
+        FirstDecl = Next;
+      }
+      
+      if (!FirstDecl)
+        LastDecl = 0;
+    }
+  }
+  
   // Load the external declarations, if any.
   SmallVector<Decl*, 64> Decls;
   ExternalLexicalStorage = false;
@@ -854,14 +873,6 @@ DeclContext::LoadLexicalDeclsFromExternalStorage() const {
 
   if (Decls.empty())
     return;
-
-  // We may have already loaded just the fields of this record, in which case
-  // don't add the decls, just replace the FirstDecl/LastDecl chain.
-  if (const RecordDecl *RD = dyn_cast<RecordDecl>(this))
-    if (RD->LoadedFieldsFromExternalStorage) {
-      llvm::tie(FirstDecl, LastDecl) = BuildDeclChain(Decls);
-      return;
-    }
 
   // Splice the newly-read declarations into the beginning of the list
   // of declarations.
@@ -891,7 +902,7 @@ ExternalASTSource::SetNoExternalVisibleDeclsForName(const DeclContext *DC,
 DeclContext::lookup_result
 ExternalASTSource::SetExternalVisibleDeclsForName(const DeclContext *DC,
                                                   DeclarationName Name,
-                                    SmallVectorImpl<NamedDecl*> &Decls) {
+                                                  ArrayRef<NamedDecl*> Decls) {
   ASTContext &Context = DC->getParentASTContext();;
 
   StoredDeclsMap *Map;
@@ -899,33 +910,15 @@ ExternalASTSource::SetExternalVisibleDeclsForName(const DeclContext *DC,
     Map = DC->CreateStoredDeclsMap(Context);
 
   StoredDeclsList &List = (*Map)[Name];
-  for (unsigned I = 0, N = Decls.size(); I != N; ++I) {
+  for (ArrayRef<NamedDecl*>::iterator
+         I = Decls.begin(), E = Decls.end(); I != E; ++I) {
     if (List.isNull())
-      List.setOnlyValue(Decls[I]);
+      List.setOnlyValue(*I);
     else
-      List.AddSubsequentDecl(Decls[I]);
+      List.AddSubsequentDecl(*I);
   }
 
   return List.getLookupResult();
-}
-
-void ExternalASTSource::MaterializeVisibleDeclsForName(const DeclContext *DC,
-                                                       DeclarationName Name,
-                                     SmallVectorImpl<NamedDecl*> &Decls) {
-  assert(DC->LookupPtr);
-  StoredDeclsMap &Map = *DC->LookupPtr;
-
-  // If there's an entry in the table the visible decls for this name have
-  // already been deserialized.
-  if (Map.find(Name) == Map.end()) {
-    StoredDeclsList &List = Map[Name];
-    for (unsigned I = 0, N = Decls.size(); I != N; ++I) {
-      if (List.isNull())
-        List.setOnlyValue(Decls[I]);
-      else
-        List.AddSubsequentDecl(Decls[I]);
-    }
-  }
 }
 
 DeclContext::decl_iterator DeclContext::noload_decls_begin() const {
@@ -940,8 +933,6 @@ DeclContext::decl_iterator DeclContext::decls_begin() const {
   if (hasExternalLexicalStorage())
     LoadLexicalDeclsFromExternalStorage();
 
-  // FIXME: Check whether we need to load some declarations from
-  // external storage.
   return decl_iterator(FirstDecl);
 }
 
@@ -988,6 +979,9 @@ void DeclContext::removeDecl(Decl *D) {
   // Remove D from the lookup table if necessary.
   if (isa<NamedDecl>(D)) {
     NamedDecl *ND = cast<NamedDecl>(D);
+
+    // Remove only decls that have a name
+    if (!ND->getDeclName()) return;
 
     StoredDeclsMap *Map = getPrimaryContext()->LookupPtr;
     if (!Map) return;
@@ -1039,12 +1033,10 @@ void DeclContext::buildLookup(DeclContext *DCtx) {
         if (D->getDeclContext() == DCtx)
           makeDeclVisibleInContextImpl(ND);
 
-      // Insert any forward-declared Objective-C interfaces into the lookup
+      // Insert any forward-declared Objective-C interface into the lookup
       // data structure.
       if (ObjCClassDecl *Class = dyn_cast<ObjCClassDecl>(*D))
-        for (ObjCClassDecl::iterator I = Class->begin(), IEnd = Class->end();
-             I != IEnd; ++I)
-          makeDeclVisibleInContextImpl(I->getInterface());
+        makeDeclVisibleInContextImpl(Class->getForwardInterfaceDecl());
       
       // If this declaration is itself a transparent declaration context or
       // inline namespace, add its members (recursively).
@@ -1204,15 +1196,6 @@ void DeclContext::makeDeclVisibleInContextImpl(NamedDecl *D) {
 
   // Put this declaration into the appropriate slot.
   DeclNameEntries.AddSubsequentDecl(D);
-}
-
-void DeclContext::MaterializeVisibleDeclsFromExternalStorage() {
-  ExternalASTSource *Source = getParentASTContext().getExternalSource();
-  assert(hasExternalVisibleStorage() && Source && "No external storage?");
-
-  if (!LookupPtr)
-    CreateStoredDeclsMap(getParentASTContext());
-  Source->MaterializeVisibleDecls(this);
 }
 
 /// Returns iterator range [First, Last) of UsingDirectiveDecls stored within

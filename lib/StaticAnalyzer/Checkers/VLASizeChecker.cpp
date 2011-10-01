@@ -62,10 +62,10 @@ void VLASizeChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
       BT_undef.reset(new BuiltinBug("Declared variable-length array (VLA) "
                                     "uses a garbage value as its size"));
 
-    EnhancedBugReport *report =
-      new EnhancedBugReport(*BT_undef, BT_undef->getName(), N);
+    BugReport *report =
+      new BugReport(*BT_undef, BT_undef->getName(), N);
     report->addRange(SE->getSourceRange());
-    report->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, SE);
+    report->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N, SE));
     C.EmitReport(report);
     return;
   }
@@ -87,10 +87,10 @@ void VLASizeChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
       BT_zero.reset(new BuiltinBug("Declared variable-length array (VLA) has "
                                    "zero size"));
 
-    EnhancedBugReport *report =
-      new EnhancedBugReport(*BT_zero, BT_zero->getName(), N);
+    BugReport *report =
+      new BugReport(*BT_zero, BT_zero->getName(), N);
     report->addRange(SE->getSourceRange());
-    report->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, SE);
+    report->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N, SE));
     C.EmitReport(report);
     return;
   }

@@ -116,7 +116,7 @@ static void AddKeyword(StringRef Keyword,
   else if (LangOpts.CPlusPlus0x && (Flags & KEYCXX0X)) AddResult = 2;
   else if (LangOpts.C99 && (Flags & KEYC99)) AddResult = 2;
   else if (LangOpts.GNUKeywords && (Flags & KEYGNU)) AddResult = 1;
-  else if (LangOpts.Microsoft && (Flags & KEYMS)) AddResult = 1;
+  else if (LangOpts.MicrosoftExt && (Flags & KEYMS)) AddResult = 1;
   else if (LangOpts.Borland && (Flags & KEYBORLAND)) AddResult = 1;
   else if (LangOpts.Bool && (Flags & BOOLSUPPORT)) AddResult = 2;
   else if (LangOpts.AltiVec && (Flags & KEYALTIVEC)) AddResult = 2;
@@ -219,6 +219,7 @@ tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {
   CASE(12, 'i', 'c', include_next);
 
   CASE(16, '_', 'i', __include_macros);
+  CASE(16, '_', 'e', __export_macro__);
 #undef CASE
 #undef HASH
   }
@@ -394,6 +395,7 @@ ObjCMethodFamily Selector::getMethodFamilyImpl(Selector sel) {
   if (sel.isUnarySelector()) {
     if (name == "autorelease") return OMF_autorelease;
     if (name == "dealloc") return OMF_dealloc;
+    if (name == "finalize") return OMF_finalize;
     if (name == "release") return OMF_release;
     if (name == "retain") return OMF_retain;
     if (name == "retainCount") return OMF_retainCount;

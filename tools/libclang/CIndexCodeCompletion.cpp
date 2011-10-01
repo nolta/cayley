@@ -16,6 +16,7 @@
 #include "CXTranslationUnit.h"
 #include "CXString.h"
 #include "CXCursor.h"
+#include "CXString.h"
 #include "CIndexDiagnostic.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/Decl.h"
@@ -212,7 +213,7 @@ struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
   SmallVector<StoredDiagnostic, 8> Diagnostics;
 
   /// \brief Diag object
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diag;
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diag;
   
   /// \brief Language options used to adjust source locations.
   LangOptions LangOpts;
@@ -269,7 +270,7 @@ static llvm::sys::cas_flag CodeCompletionResultObjects;
 AllocatedCXCodeCompleteResults::AllocatedCXCodeCompleteResults(
                                       const FileSystemOptions& FileSystemOpts)
   : CXCodeCompleteResults(),
-    Diag(new Diagnostic(
+    Diag(new DiagnosticsEngine(
                    llvm::IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs))),
     FileSystemOpts(FileSystemOpts),
     FileMgr(new FileManager(FileSystemOpts)),
@@ -541,8 +542,20 @@ namespace {
         CXCursorKind cursorKind = clang_getCursorKind(cursor);
         CXString cursorUSR = clang_getCursorUSR(cursor);
         
+        // Normally, clients of CXString shouldn't care whether or not
+        // a CXString is managed by a pool or by explicitly malloc'ed memory.
+        // However, there are cases when AllocatedResults outlives the
+        // CXTranslationUnit.  This is a workaround that failure mode.
+        if (cxstring::isManagedByPool(cursorUSR)) {
+          CXString heapStr =
+            cxstring::createCXString(clang_getCString(cursorUSR), true);
+          clang_disposeString(cursorUSR);
+          cursorUSR = heapStr;
+        }
+        
         AllocatedResults.ContainerKind = cursorKind;
         AllocatedResults.ContainerUSR = cursorUSR;
+        
         const Type *type = baseType.getTypePtrOrNull();
         if (type != NULL) {
           AllocatedResults.ContainerIsIncomplete = type->isIncompleteType();

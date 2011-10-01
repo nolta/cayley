@@ -38,8 +38,7 @@ static bool ParsePrecision(FormatStringHandler &H, PrintfSpecifier &FS,
                            unsigned *argIndex) {
   if (argIndex) {
     FS.setPrecision(ParseNonPositionAmount(Beg, E, *argIndex));
-  }
-  else {
+  } else {
     const OptionalAmount Amt = ParsePositionAmount(H, Start, Beg, E,
                                            analyze_format_string::PrecisionPos);
     if (Amt.isInvalid())
@@ -461,9 +460,8 @@ bool PrintfSpecifier::fixType(QualType QT) {
       CS.setKind(ConversionSpecifier::uArg);
     HasAlternativeForm = 0;
     HasPlusPrefix = 0;
-  }
-  else {
-    assert(0 && "Unexpected type");
+  } else {
+    llvm_unreachable("Unexpected type");
   }
 
   return true;

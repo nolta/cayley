@@ -146,7 +146,8 @@ public:
   /// MacroExpands - This is called by
   /// Preprocessor::HandleMacroExpandedIdentifier when a macro invocation is
   /// found.
-  virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo* MI) {
+  virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo* MI,
+                            SourceRange Range) {
   }
 
   /// MacroDefined - This hook is called whenever a macro definition is seen.
@@ -156,6 +157,12 @@ public:
   /// MacroUndefined - This hook is called whenever a macro #undef is seen.
   /// MI is released immediately following this callback.
   virtual void MacroUndefined(const Token &MacroNameTok, const MacroInfo *MI) {
+  }
+  
+  /// SourceRangeSkipped - This hook is called when a source range is skipped.
+  /// \param Range The SourceRange that was skipped. The range begins at the
+  /// #if/#else directive and ends after the #endif/#else directive.
+  virtual void SourceRangeSkipped(SourceRange Range) {
   }
 
   /// If -- This hook is called whenever an #if is seen.
@@ -269,9 +276,10 @@ public:
     Second->PragmaDiagnostic(Loc, Namespace, mapping, Str);
   }
 
-  virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo* MI) {
-    First->MacroExpands(MacroNameTok, MI);
-    Second->MacroExpands(MacroNameTok, MI);
+  virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo* MI,
+                            SourceRange Range) {
+    First->MacroExpands(MacroNameTok, MI, Range);
+    Second->MacroExpands(MacroNameTok, MI, Range);
   }
 
   virtual void MacroDefined(const Token &MacroNameTok, const MacroInfo *MI) {
@@ -282,6 +290,11 @@ public:
   virtual void MacroUndefined(const Token &MacroNameTok, const MacroInfo *MI) {
     First->MacroUndefined(MacroNameTok, MI);
     Second->MacroUndefined(MacroNameTok, MI);
+  }
+
+  virtual void SourceRangeSkipped(SourceRange Range) {
+    First->SourceRangeSkipped(Range);
+    Second->SourceRangeSkipped(Range);
   }
 
   /// If -- This hook is called whenever an #if is seen.

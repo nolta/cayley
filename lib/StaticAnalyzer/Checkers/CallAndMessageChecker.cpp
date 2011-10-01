@@ -16,6 +16,7 @@
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/Basic/TargetInfo.h"
@@ -64,9 +65,9 @@ void CallAndMessageChecker::EmitBadCall(BugType *BT, CheckerContext &C,
   if (!N)
     return;
 
-  EnhancedBugReport *R = new EnhancedBugReport(*BT, BT->getName(), N);
-  R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue,
-                       bugreporter::GetCalleeExpr(N));
+  BugReport *R = new BugReport(*BT, BT->getName(), N);
+  R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N,
+                               bugreporter::GetCalleeExpr(N)));
   C.EmitReport(R);
 }
 
@@ -92,10 +93,10 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
       LazyInit_BT(BT_desc, BT);
 
       // Generate a report for this bug.
-      EnhancedBugReport *R = new EnhancedBugReport(*BT, BT->getName(), N);
+      BugReport *R = new BugReport(*BT, BT->getName(), N);
       R->addRange(argRange);
       if (argEx)
-        R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, argEx);
+        R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N, argEx));
       C.EmitReport(R);
     }
     return true;
@@ -174,7 +175,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
         }
 
         // Generate a report for this bug.
-        EnhancedBugReport *R = new EnhancedBugReport(*BT, os.str(), N);
+        BugReport *R = new BugReport(*BT, os.str(), N);
         R->addRange(argRange);
 
         // FIXME: enhance track back for uninitialized value for arbitrary
@@ -227,11 +228,11 @@ void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
         if (!BT_msg_undef)
           BT_msg_undef.reset(new BuiltinBug("Receiver in message expression is "
                                             "an uninitialized value"));
-        EnhancedBugReport *R =
-          new EnhancedBugReport(*BT_msg_undef, BT_msg_undef->getName(), N);
+        BugReport *R =
+          new BugReport(*BT_msg_undef, BT_msg_undef->getName(), N);
         R->addRange(receiver->getSourceRange());
-        R->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue,
-                             receiver);
+        R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N,
+                                                                   receiver));
         C.EmitReport(R);
       }
       return;
@@ -272,11 +273,11 @@ void CallAndMessageChecker::emitNilReceiverBug(CheckerContext &C,
      << "' is nil and returns a value of type '"
      << msg.getType(C.getASTContext()).getAsString() << "' that will be garbage";
 
-  EnhancedBugReport *report = new EnhancedBugReport(*BT_msg_ret, os.str(), N);
+  BugReport *report = new BugReport(*BT_msg_ret, os.str(), N);
   if (const Expr *receiver = msg.getInstanceReceiver()) {
     report->addRange(receiver->getSourceRange());
-    report->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue,
-                              receiver);
+    report->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N,
+                                                                    receiver));
   }
   C.EmitReport(report);
 }
@@ -323,7 +324,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
     const uint64_t returnTypeSize = Ctx.getTypeSize(CanRetTy);
 
     if (voidPtrSize < returnTypeSize &&
-        !(supportsNilWithFloatRet(Ctx.Target.getTriple()) &&
+        !(supportsNilWithFloatRet(Ctx.getTargetInfo().getTriple()) &&
           (Ctx.FloatTy == CanRetTy ||
            Ctx.DoubleTy == CanRetTy ||
            Ctx.LongDoubleTy == CanRetTy ||

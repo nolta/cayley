@@ -17,6 +17,7 @@
 #include "clang/Lex/LexDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 using namespace clang;
 
 /// HexDigitValue - Return the value of the specified hex digit, or -1 if it's
@@ -30,7 +31,7 @@ static int HexDigitValue(char C) {
 
 static unsigned getCharWidth(tok::TokenKind kind, const TargetInfo &Target) {
   switch (kind) {
-  default: assert(0 && "Unknown token type!");
+  default: llvm_unreachable("Unknown token type!");
   case tok::char_constant:
   case tok::string_literal:
   case tok::utf8_string_literal:
@@ -52,7 +53,7 @@ static unsigned getCharWidth(tok::TokenKind kind, const TargetInfo &Target) {
 static unsigned ProcessCharEscape(const char *&ThisTokBuf,
                                   const char *ThisTokEnd, bool &HadError,
                                   FullSourceLoc Loc, unsigned CharWidth,
-                                  Diagnostic *Diags) {
+                                  DiagnosticsEngine *Diags) {
   // Skip the '\' char.
   ++ThisTokBuf;
 
@@ -179,7 +180,7 @@ static unsigned ProcessCharEscape(const char *&ThisTokBuf,
 /// return the UTF32.
 static bool ProcessUCNEscape(const char *&ThisTokBuf, const char *ThisTokEnd,
                              uint32_t &UcnVal, unsigned short &UcnLen,
-                             FullSourceLoc Loc, Diagnostic *Diags, 
+                             FullSourceLoc Loc, DiagnosticsEngine *Diags, 
                              const LangOptions &Features) {
   if (!Features.CPlusPlus && !Features.C99 && Diags)
     Diags->Report(Loc, diag::warn_ucn_not_valid_in_c89);
@@ -233,7 +234,8 @@ static bool ProcessUCNEscape(const char *&ThisTokBuf, const char *ThisTokEnd,
 static void EncodeUCNEscape(const char *&ThisTokBuf, const char *ThisTokEnd,
                             char *&ResultBuf, bool &HadError,
                             FullSourceLoc Loc, unsigned CharByteWidth,
-                            Diagnostic *Diags, const LangOptions &Features) {
+                            DiagnosticsEngine *Diags,
+                            const LangOptions &Features) {
   typedef uint32_t UTF32;
   UTF32 UcnVal = 0;
   unsigned short UcnLen = 0;
@@ -452,7 +454,7 @@ NumericLiteralParser(const char *begin, const char *end,
       continue;  // Success.
     case 'i':
     case 'I':
-      if (PP.getLangOptions().Microsoft) {
+      if (PP.getLangOptions().MicrosoftExt) {
         if (isFPConstant || isLong || isLongLong) break;
 
         // Allow i8, i16, i32, i64, and i128.
@@ -546,7 +548,7 @@ void NumericLiteralParser::ParseNumberStartingWithZero(SourceLocation TokLoc) {
     }
     // A binary exponent can appear with or with a '.'. If dotted, the
     // binary exponent is required.
-    if ((*s == 'p' || *s == 'P') && !PP.getLangOptions().CPlusPlus0x) {
+    if (*s == 'p' || *s == 'P') {
       const char *Exponent = s;
       s++;
       saw_exponent = true;
@@ -563,9 +565,7 @@ void NumericLiteralParser::ParseNumberStartingWithZero(SourceLocation TokLoc) {
       // In C++0x, we cannot support hexadecmial floating literals because
       // they conflict with user-defined literals, so we warn in previous
       // versions of C++ by default.
-      if (PP.getLangOptions().CPlusPlus)
-        PP.Diag(TokLoc, diag::ext_hexconstant_cplusplus);
-      else if (!PP.getLangOptions().HexFloats)
+      if (!PP.getLangOptions().HexFloats)
         PP.Diag(TokLoc, diag::ext_hexconstant_invalid);
     } else if (saw_period) {
       PP.Diag(PP.AdvanceToTokenCharacter(TokLoc, s-ThisTokBegin),
@@ -784,8 +784,9 @@ CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
 
       // Is this a Universal Character Name escape?
     if (begin[0] != '\\')     // If this is a normal character, consume it.
-      ResultChar = *begin++;
+      ResultChar = (unsigned char)*begin++;
     else {                    // Otherwise, this is an escape character.
+      unsigned CharWidth = getCharWidth(Kind, PP.getTargetInfo());
       // Check for UCN.
       if (begin[1] == 'u' || begin[1] == 'U') {
         uint32_t utf32 = 0;
@@ -796,9 +797,12 @@ CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
           HadError = 1;
         }
         ResultChar = utf32;
+        if (CharWidth != 32 && (ResultChar >> CharWidth) != 0) {
+          PP.Diag(Loc, diag::warn_ucn_escape_too_large);
+          ResultChar &= ~0U >> (32-CharWidth);
+        }
       } else {
         // Otherwise, this is a non-UCN escape character.  Process it.
-        unsigned CharWidth = getCharWidth(Kind, PP.getTargetInfo());
         ResultChar = ProcessCharEscape(begin, end, HadError,
                                        FullSourceLoc(Loc,PP.getSourceManager()),
                                        CharWidth, &PP.getDiagnostics());
@@ -842,10 +846,6 @@ CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
 
   // Transfer the value from APInt to uint64_t
   Value = LitVal.getZExtValue();
-
-  if (((isWide() && PP.getLangOptions().ShortWChar) || isUTF16()) &&
-      Value > 0xFFFF)
-    PP.Diag(Loc, diag::warn_ucn_escape_too_large);
 
   // If this is a single narrow character, sign extend it (e.g. '\xFF' is "-1")
   // if 'char' is signed for this target (C99 6.4.4.4p10).  Note that multiple
