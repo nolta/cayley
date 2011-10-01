@@ -844,6 +844,9 @@ public:
                                std::pair<SourceLocation,
                                          PartialDiagnostic> Note);
 
+  bool RequireLiteralType(SourceLocation Loc, QualType T,
+                          const PartialDiagnostic &PD,
+                          bool AllowIncompleteType = false);
 
   QualType getElaboratedType(ElaboratedTypeKeyword Keyword,
                              const CXXScopeSpec &SS, QualType T);
@@ -1012,6 +1015,23 @@ public:
                                      bool &Redeclaration,
                                      bool &AddToScope);
   bool AddOverriddenMethods(CXXRecordDecl *DC, CXXMethodDecl *MD);
+
+  /// \brief The kind of constexpr declaration checking we are performing.
+  ///
+  /// The kind affects which diagnostics (if any) are emitted if the function
+  /// does not satisfy the requirements of a constexpr function declaration.
+  enum CheckConstexprKind {
+    /// \brief Check a constexpr function declaration, and produce errors if it
+    /// does not satisfy the requirements.
+    CCK_Declaration,
+    /// \brief Check a constexpr function template instantiation.
+    CCK_Instantiation,
+    /// \brief Produce notes explaining why an instantiation was not constexpr.
+    CCK_NoteNonConstexprInstantiation
+  };
+  bool CheckConstexprFunctionDecl(const FunctionDecl *FD, CheckConstexprKind CCK);
+  bool CheckConstexprFunctionBody(const FunctionDecl *FD, Stmt *Body);
+
   void DiagnoseHiddenVirtualMethods(CXXRecordDecl *DC, CXXMethodDecl *MD);
   void CheckFunctionDeclaration(Scope *S,
                                 FunctionDecl *NewFD, LookupResult &Previous,
@@ -1810,6 +1830,8 @@ public:
                            bool NonInheritable = true, bool Inheritable = true);
   void ProcessDeclAttributeList(Scope *S, Decl *D, const AttributeList *AL,
                            bool NonInheritable = true, bool Inheritable = true);
+
+  void checkUnusedDeclAttributes(Declarator &D);
 
   bool CheckRegparmAttr(const AttributeList &attr, unsigned &value);
   bool CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC);
@@ -5411,6 +5433,11 @@ public:
   /// FreeVisContext - Deallocate and null out VisContext.
   void FreeVisContext();
 
+  /// AddCFAuditedAttribute - Check whether we're currently within
+  /// '#pragma clang arc_cf_code_audited' and, if so, consider adding
+  /// the appropriate attribute.
+  void AddCFAuditedAttribute(Decl *D);
+
   /// AddAlignedAttr - Adds an aligned attribute to a particular declaration.
   void AddAlignedAttr(SourceRange AttrRange, Decl *D, Expr *E);
   void AddAlignedAttr(SourceRange AttrRange, Decl *D, TypeSourceInfo *T);
@@ -5764,10 +5791,6 @@ public:
   ExprResult CXXCheckCStyleCast(SourceRange R, QualType CastTy, ExprValueKind &VK,
                                 Expr *CastExpr, CastKind &Kind,
                                 CXXCastPath &BasePath, bool FunctionalStyle);
-    
-  /// \brief Checks for valid expressions which can be cast to an ObjC
-  /// pointer without needing a bridge cast.
-  bool ValidObjCARCNoBridgeCastExpr(Expr *&Exp, QualType castType);
     
   /// \brief Checks for invalid conversions and casts between
   /// retainable pointers and other pointer kinds.

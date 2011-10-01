@@ -3250,7 +3250,9 @@ static void handleObjCReturnsInnerPointerAttr(Sema &S, Decl *D,
 
   // Check that the method returns a normal pointer.
   QualType resultType = method->getResultType();
-  if (!resultType->isPointerType() || resultType->isObjCRetainableType()) {
+    
+  if (!resultType->isReferenceType() &&
+      (!resultType->isPointerType() || resultType->isObjCRetainableType())) {
     S.Diag(method->getLocStart(), diag::warn_ns_attribute_wrong_return_type)
       << SourceRange(loc)
       << attr.getName() << /*method*/ 1 << /*non-retainable pointer*/ 2;
@@ -3261,6 +3263,41 @@ static void handleObjCReturnsInnerPointerAttr(Sema &S, Decl *D,
 
   method->addAttr(
     ::new (S.Context) ObjCReturnsInnerPointerAttr(attr.getRange(), S.Context));
+}
+
+/// Handle cf_audited_transfer and cf_unknown_transfer.
+static void handleCFTransferAttr(Sema &S, Decl *D, const AttributeList &A) {
+  if (!isa<FunctionDecl>(D)) {
+    S.Diag(D->getLocStart(), diag::err_attribute_wrong_decl_type)
+      << A.getRange() << A.getName() << 0 /*function*/;
+    return;
+  }
+
+  bool IsAudited = (A.getKind() == AttributeList::AT_cf_audited_transfer);
+
+  // Check whether there's a conflicting attribute already present.
+  Attr *Existing;
+  if (IsAudited) {
+    Existing = D->getAttr<CFUnknownTransferAttr>();
+  } else {
+    Existing = D->getAttr<CFAuditedTransferAttr>();
+  }
+  if (Existing) {
+    S.Diag(D->getLocStart(), diag::err_attributes_are_not_compatible)
+      << A.getName()
+      << (IsAudited ? "cf_unknown_transfer" : "cf_audited_transfer")
+      << A.getRange() << Existing->getRange();
+    return;
+  }
+
+  // All clear;  add the attribute.
+  if (IsAudited) {
+    D->addAttr(
+      ::new (S.Context) CFAuditedTransferAttr(A.getRange(), S.Context));
+  } else {
+    D->addAttr(
+      ::new (S.Context) CFUnknownTransferAttr(A.getRange(), S.Context));
+  }
 }
 
 static void handleNSBridgedAttr(Sema &S, Scope *Sc, Decl *D,
@@ -3499,6 +3536,10 @@ static void ProcessInheritableDeclAttr(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_ns_bridged:
     handleNSBridgedAttr(S, scope, D, Attr); break;
 
+  case AttributeList::AT_cf_audited_transfer:
+  case AttributeList::AT_cf_unknown_transfer:
+    handleCFTransferAttr(S, D, Attr); break;
+
   // Checker-specific.
   case AttributeList::AT_cf_consumed:
   case AttributeList::AT_ns_consumed: handleNSConsumedAttr  (S, D, Attr); break;
@@ -3676,6 +3717,34 @@ void Sema::ProcessDeclAttributeList(Scope *S, Decl *D,
     dyn_cast<NamedDecl>(D)->getNameAsString();
     return;
   }
+}
+
+/// checkUnusedDeclAttributes - Check a list of attributes to see if it
+/// contains any decl attributes that we should warn about.
+static void checkUnusedDeclAttributes(Sema &S, const AttributeList *A) {
+  for ( ; A; A = A->getNext()) {
+    // Only warn if the attribute is an unignored, non-type attribute.
+    if (A->isUsedAsTypeAttr()) continue;
+    if (A->getKind() == AttributeList::IgnoredAttribute) continue;
+
+    if (A->getKind() == AttributeList::UnknownAttribute) {
+      S.Diag(A->getLoc(), diag::warn_unknown_attribute_ignored)
+        << A->getName() << A->getRange();
+    } else {
+      S.Diag(A->getLoc(), diag::warn_attribute_not_on_decl)
+        << A->getName() << A->getRange();
+    }
+  }
+}
+
+/// checkUnusedDeclAttributes - Given a declarator which is not being
+/// used to build a declaration, complain about any decl attributes
+/// which might be lying around on it.
+void Sema::checkUnusedDeclAttributes(Declarator &D) {
+  ::checkUnusedDeclAttributes(*this, D.getDeclSpec().getAttributes().getList());
+  ::checkUnusedDeclAttributes(*this, D.getAttributes());
+  for (unsigned i = 0, e = D.getNumTypeObjects(); i != e; ++i)
+    ::checkUnusedDeclAttributes(*this, D.getTypeObject(i).getAttrs());
 }
 
 /// DeclClonePragmaWeak - clone existing decl (maybe definition),

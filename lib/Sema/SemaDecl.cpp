@@ -2249,6 +2249,9 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
     Tag = dyn_cast<TagDecl>(TagD);
   }
 
+  if (Tag)
+    Tag->setFreeStanding();
+
   if (unsigned TypeQuals = DS.getTypeQualifiers()) {
     // Enforce C99 6.7.3p2: "Types other than pointer types derived from object
     // or incomplete types shall not be restrict-qualified."
@@ -4767,15 +4770,11 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       // are implicitly inline.
       NewFD->setImplicitlyInline();
 
-      // FIXME: If this is a redeclaration, check the original declaration was
-      // marked constepr.
-
       // C++0x [dcl.constexpr]p3: functions declared constexpr are required to
       // be either constructors or to return a literal type. Therefore,
       // destructors cannot be declared constexpr.
       if (isa<CXXDestructorDecl>(NewFD))
-        Diag(D.getDeclSpec().getConstexprSpecLoc(),
-             diag::err_constexpr_dtor);
+        Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_constexpr_dtor);
     }
 
     // If __module_private__ was specified, mark the function accordingly.
@@ -5047,6 +5046,10 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
             Previous.getResultKind() != LookupResult::FoundOverloaded) &&
            "previous declaration set still overloaded");
 
+    if (NewFD->isConstexpr() && !NewFD->isInvalidDecl() &&
+        !CheckConstexprFunctionDecl(NewFD, CCK_Declaration))
+      NewFD->setInvalidDecl();
+
     NamedDecl *PrincipalDecl = (FunctionTemplate
                                 ? cast<NamedDecl>(FunctionTemplate)
                                 : NewFD);
@@ -5186,6 +5189,10 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   // member, set the visibility of this function.
   if (NewFD->getLinkage() == ExternalLinkage && !DC->isRecord())
     AddPushedVisibilityAttribute(NewFD);
+
+  // If there's a #pragma clang arc_cf_code_audited in scope, consider
+  // marking the function.
+  AddCFAuditedAttribute(NewFD);
 
   // If this is a locally-scoped extern C function, update the
   // map of such names.
@@ -6955,6 +6962,10 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
       // enabled.
       ActivePolicy = &WP;
     }
+
+    if (FD && FD->isConstexpr() && !FD->isInvalidDecl() &&
+        !CheckConstexprFunctionBody(FD, Body))
+      FD->setInvalidDecl();
 
     assert(ExprTemporaries.empty() && "Leftover temporaries in function");
     assert(!ExprNeedsCleanups && "Unaccounted cleanups in function");
