@@ -407,7 +407,6 @@ void ASTDeclWriter::VisitObjCMethodDecl(ObjCMethodDecl *D) {
   // FIXME: stable encoding for in/out/inout/bycopy/byref/oneway
   Record.push_back(D->getObjCDeclQualifier());
   Record.push_back(D->hasRelatedResultType());
-  Record.push_back(D->getNumSelectorArgs());
   Writer.AddTypeRef(D->getResultType(), Record);
   Writer.AddTypeSourceInfo(D->getResultTypeSourceInfo(), Record);
   Writer.AddSourceLocation(D->getLocEnd(), Record);
@@ -415,6 +414,14 @@ void ASTDeclWriter::VisitObjCMethodDecl(ObjCMethodDecl *D) {
   for (ObjCMethodDecl::param_iterator P = D->param_begin(),
                                    PEnd = D->param_end(); P != PEnd; ++P)
     Writer.AddDeclRef(*P, Record);
+
+  Record.push_back(D->SelLocsKind);
+  unsigned NumStoredSelLocs = D->getNumStoredSelLocs();
+  SourceLocation *SelLocs = D->getStoredSelLocs();
+  Record.push_back(NumStoredSelLocs);
+  for (unsigned i = 0; i != NumStoredSelLocs; ++i)
+    Writer.AddSourceLocation(SelLocs[i], Record);
+
   Code = serialization::DECL_OBJC_METHOD;
 }
 

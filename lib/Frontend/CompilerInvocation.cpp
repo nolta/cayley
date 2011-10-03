@@ -625,10 +625,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-fmsc-version=" + llvm::utostr(Opts.MSCVersion));
   if (Opts.Borland)
     Res.push_back("-fborland-extensions");
-  if (Opts.ObjCNonFragileABI)
-    Res.push_back("-fobjc-nonfragile-abi");
-  if (Opts.ObjCNonFragileABI2)
-    Res.push_back("-fobjc-nonfragile-abi");
+  if (!Opts.ObjCNonFragileABI)
+    Res.push_back("-fobjc-fragile-abi");
   if (Opts.ObjCDefaultSynthProperties)
     Res.push_back("-fobjc-default-synthesize-properties");
   // NoInline is implicit.
@@ -1635,7 +1633,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       Opts.setGC(LangOptions::HybridGC);
     else if (Args.hasArg(OPT_fobjc_arc)) {
       Opts.ObjCAutoRefCount = 1;
-      if (!Args.hasArg(OPT_fobjc_nonfragile_abi))
+      if (Args.hasArg(OPT_fobjc_fragile_abi))
         Diags.Report(diag::err_arc_nonfragile_abi);
     }
 
@@ -1739,7 +1737,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.NeXTRuntime = !Args.hasArg(OPT_fgnu_runtime);
   Opts.ObjCConstantStringClass =
     Args.getLastArgValue(OPT_fconstant_string_class);
-  Opts.ObjCNonFragileABI = Args.hasArg(OPT_fobjc_nonfragile_abi);
+  Opts.ObjCNonFragileABI = !Args.hasArg(OPT_fobjc_fragile_abi);
   if (Opts.ObjCNonFragileABI)
     Opts.ObjCNonFragileABI2 = true;
   Opts.ObjCDefaultSynthProperties =
