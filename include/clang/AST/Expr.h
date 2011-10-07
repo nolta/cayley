@@ -770,6 +770,7 @@ public:
     DeclRefExprBits.HasQualifier = 0;
     DeclRefExprBits.HasExplicitTemplateArgs = 0;
     DeclRefExprBits.HasFoundDecl = 0;
+    DeclRefExprBits.HadMultipleCandidates = 0;
     computeDependence();
   }
 
@@ -921,6 +922,18 @@ public:
       return SourceLocation();
 
     return getExplicitTemplateArgs().RAngleLoc;
+  }
+
+  /// \brief Returns true if this expression refers to a function that
+  /// was resolved from an overloaded set having size greater than 1.
+  bool hadMultipleCandidates() const {
+    return DeclRefExprBits.HadMultipleCandidates;
+  }
+  /// \brief Sets the flag telling whether this expression refers to
+  /// a function that was resolved from an overloaded set having size
+  /// greater than 1.
+  void setHadMultipleCandidates(bool V = true) {
+    DeclRefExprBits.HadMultipleCandidates = V;
   }
 
   static bool classof(const Stmt *T) {
@@ -2222,6 +2235,10 @@ class MemberExpr : public Expr {
   /// the MemberNameQualifier structure.
   bool HasExplicitTemplateArgumentList : 1;
 
+  /// \brief True if this member expression refers to a method that
+  /// was resolved from an overloaded set having size greater than 1.
+  bool HadMultipleCandidates : 1;
+
   /// \brief Retrieve the qualifier that preceded the member name, if any.
   MemberNameQualifier *getMemberQualifier() {
     assert(HasQualifierOrFoundDecl);
@@ -2244,7 +2261,8 @@ public:
            base->containsUnexpandedParameterPack()),
       Base(base), MemberDecl(memberdecl), MemberLoc(NameInfo.getLoc()),
       MemberDNLoc(NameInfo.getInfo()), IsArrow(isarrow),
-      HasQualifierOrFoundDecl(false), HasExplicitTemplateArgumentList(false) {
+      HasQualifierOrFoundDecl(false), HasExplicitTemplateArgumentList(false),
+      HadMultipleCandidates(false) {
     assert(memberdecl->getDeclName() == NameInfo.getName());
   }
 
@@ -2261,7 +2279,8 @@ public:
            base->containsUnexpandedParameterPack()),
       Base(base), MemberDecl(memberdecl), MemberLoc(l), MemberDNLoc(),
       IsArrow(isarrow),
-      HasQualifierOrFoundDecl(false), HasExplicitTemplateArgumentList(false) {}
+      HasQualifierOrFoundDecl(false), HasExplicitTemplateArgumentList(false),
+      HadMultipleCandidates(false) {}
 
   static MemberExpr *Create(ASTContext &C, Expr *base, bool isarrow,
                             NestedNameSpecifierLoc QualifierLoc,
@@ -2411,7 +2430,19 @@ public:
   bool isImplicitAccess() const {
     return getBase() && getBase()->isImplicitCXXThis();
   }
-  
+
+  /// \brief Returns true if this member expression refers to a method that
+  /// was resolved from an overloaded set having size greater than 1.
+  bool hadMultipleCandidates() const {
+    return HadMultipleCandidates;
+  }
+  /// \brief Sets the flag telling whether this expression refers to
+  /// a method that was resolved from an overloaded set having size
+  /// greater than 1.
+  void setHadMultipleCandidates(bool V = true) {
+    HadMultipleCandidates = V;
+  }
+
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == MemberExprClass;
   }

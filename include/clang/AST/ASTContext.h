@@ -63,6 +63,7 @@ namespace clang {
   class ObjCIvarDecl;
   class ObjCIvarRefExpr;
   class ObjCPropertyDecl;
+  class ParmVarDecl;
   class RecordDecl;
   class StoredDeclsMap;
   class TagDecl;
@@ -120,6 +121,7 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   mutable llvm::FoldingSet<ObjCObjectTypeImpl> ObjCObjectTypes;
   mutable llvm::FoldingSet<ObjCObjectPointerType> ObjCObjectPointerTypes;
   mutable llvm::FoldingSet<AutoType> AutoTypes;
+  mutable llvm::FoldingSet<AtomicType> AtomicTypes;
   llvm::FoldingSet<AttributedType> AttributedTypes;
 
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
@@ -313,6 +315,12 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   typedef UsuallyTinyPtrVector<const CXXMethodDecl> CXXMethodVector;
   llvm::DenseMap<const CXXMethodDecl *, CXXMethodVector> OverriddenMethods;
 
+  /// \brief Mapping that stores parameterIndex values for ParmVarDecls
+  /// when that value exceeds the bitfield size of
+  /// ParmVarDeclBits.ParameterIndex.
+  typedef llvm::DenseMap<const VarDecl *, unsigned> ParameterIndexTable;
+  ParameterIndexTable ParamIndices;  
+  
   TranslationUnitDecl *TUDecl;
 
   /// SourceMgr - The associated SourceManager object.
@@ -598,6 +606,10 @@ public:
   /// getSliceType - Return the uniqued reference to the type for a slice
   /// of the specified type.
   QualType getSliceType(QualType T, unsigned NumDims) const;
+
+  /// getAtomicType - Return the uniqued reference to the atomic type for
+  /// the specified type.
+  QualType getAtomicType(QualType T) const;
 
   /// getBlockPointerType - Return the uniqued reference to the type for a block
   /// of the specified type.
@@ -1627,6 +1639,15 @@ public:
   /// it is not used.
   bool DeclMustBeEmitted(const Decl *D);
 
+  
+  /// \brief Used by ParmVarDecl to store on the side the
+  /// index of the parameter when it exceeds the size of the normal bitfield.
+  void setParameterIndex(const ParmVarDecl *D, unsigned index);
+
+  /// \brief Used by ParmVarDecl to retrieve on the side the
+  /// index of the parameter when it exceeds the size of the normal bitfield.
+  unsigned getParameterIndex(const ParmVarDecl *D) const;
+  
   //===--------------------------------------------------------------------===//
   //                    Statistics
   //===--------------------------------------------------------------------===//

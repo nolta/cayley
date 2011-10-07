@@ -549,12 +549,6 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
   const Driver &D = getToolChain().getDriver();
   llvm::Triple Triple = getToolChain().getTriple();
 
-  // Disable movt generation, if requested.
-#ifdef DISABLE_ARM_DARWIN_USE_MOVT
-  CmdArgs.push_back("-backend-option");
-  CmdArgs.push_back("-arm-darwin-use-movt=0");
-#endif
-
   // Select the ABI to use.
   //
   // FIXME: Support -meabi.
@@ -725,10 +719,8 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
     CmdArgs.push_back("-arm-strict-align");
 
     // The kext linker doesn't know how to deal with movw/movt.
-#ifndef DISABLE_ARM_DARWIN_USE_MOVT
     CmdArgs.push_back("-backend-option");
     CmdArgs.push_back("-arm-darwin-use-movt=0");
-#endif
   }
 
   // Setting -mno-global-merge disables the codegen global merge pass. Setting 
@@ -2062,11 +2054,23 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    false))
     CmdArgs.push_back("-fpascal-strings");
 
+  // Honor -fpack-struct= and -fpack-struct, if given. Note that
+  // -fno-pack-struct doesn't apply to -fpack-struct=.
+  if (Arg *A = Args.getLastArg(options::OPT_fpack_struct_EQ)) {
+    CmdArgs.push_back("-fpack-struct");
+    CmdArgs.push_back(A->getValue(Args));
+  } else if (Args.hasFlag(options::OPT_fpack_struct,
+                          options::OPT_fno_pack_struct, false)) {
+    CmdArgs.push_back("-fpack-struct");
+    CmdArgs.push_back("1");
+  }
+
   if (Args.hasArg(options::OPT_mkernel) ||
       Args.hasArg(options::OPT_fapple_kext)) {
     if (!Args.hasArg(options::OPT_fcommon))
       CmdArgs.push_back("-fno-common");
   }
+
   // -fcommon is default, only pass non-default.
   else if (!Args.hasFlag(options::OPT_fcommon, options::OPT_fno_common))
     CmdArgs.push_back("-fno-common");
@@ -2318,21 +2322,7 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   // Ignore explicit -force_cpusubtype_ALL option.
   (void) Args.hasArg(options::OPT_force__cpusubtype__ALL);
 
-  // Determine the original source input.
-  const Action *SourceAction = &JA;
-  while (SourceAction->getKind() != Action::InputClass) {
-    assert(!SourceAction->getInputs().empty() && "unexpected root action!");
-    SourceAction = SourceAction->getInputs()[0];
-  }
-
-  // FIXME: Add -g support, once we have it.  For now, emit a warning indicating
-  // the integrated assembler doesn't support debug info.
-  if (SourceAction->getType() == types::TY_Asm ||
-      SourceAction->getType() == types::TY_PP_Asm) {
-    if (Args.hasArg(options::OPT_g_Group)) {
-      getToolChain().getDriver().Diag(diag::warn_drv_no_debug_w_integrated_as);
-    }
-  }
+  // FIXME: Add -g support, once we have it.
 
   // FIXME: Add -static support, once we have it.
 
@@ -2642,6 +2632,7 @@ void darwin::CC1::RemoveCC1UnsupportedArgs(ArgStringList &CmdArgs) const {
         .Case("initializer-overrides", true)
         .Case("invalid-noreturn", true)
         .Case("invalid-token-paste", true)
+        .Case("language-extension-token", true)
         .Case("literal-conversion", true)
         .Case("literal-range", true)
         .Case("local-type-template-args", true)

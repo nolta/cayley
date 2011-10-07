@@ -167,6 +167,7 @@ protected:
     unsigned HasQualifier : 1;
     unsigned HasExplicitTemplateArgs : 1;
     unsigned HasFoundDecl : 1;
+    unsigned HadMultipleCandidates : 1;
   };
 
   class CastExprBitfields {

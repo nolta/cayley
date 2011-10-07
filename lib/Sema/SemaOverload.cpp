@@ -37,11 +37,14 @@ using namespace sema;
 /// A convenience routine for creating a decayed reference to a
 /// function.
 static ExprResult
-CreateFunctionRefExpr(Sema &S, FunctionDecl *Fn,
+CreateFunctionRefExpr(Sema &S, FunctionDecl *Fn, bool HadMultipleCandidates,
                       SourceLocation Loc = SourceLocation(), 
                       const DeclarationNameLoc &LocInfo = DeclarationNameLoc()){
-  ExprResult E = S.Owned(new (S.Context) DeclRefExpr(Fn, Fn->getType(), 
-                                                     VK_LValue, Loc, LocInfo));
+  DeclRefExpr *DRE = new (S.Context) DeclRefExpr(Fn, Fn->getType(),
+                                                 VK_LValue, Loc, LocInfo);
+  if (HadMultipleCandidates)
+    DRE->setHadMultipleCandidates(true);
+  ExprResult E = S.Owned(DRE);
   E = S.DefaultFunctionArrayConversion(E.take());
   if (E.isInvalid())
     return ExprError();
@@ -2497,6 +2500,8 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
     }
   }
 
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(S, From->getLocStart(), Best, true)) {
   case OR_Success:
@@ -2518,6 +2523,7 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
         User.Before = Best->Conversions[0].Standard;
         User.EllipsisConversion = false;
       }
+      User.HadMultipleCandidates = HadMultipleCandidates;
       User.ConversionFunction = Constructor;
       User.FoundConversionFunction = Best->FoundDecl;
       User.After.setAsIdentityConversion();
@@ -2535,6 +2541,7 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
       //   conversion sequence converts the source type to the
       //   implicit object parameter of the conversion function.
       User.Before = Best->Conversions[0].Standard;
+      User.HadMultipleCandidates = HadMultipleCandidates;
       User.ConversionFunction = Conversion;
       User.FoundConversionFunction = Best->FoundDecl;
       User.EllipsisConversion = false;
@@ -3325,6 +3332,16 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
       bool DerivedToBase = false;
       bool ObjCConversion = false;
       bool ObjCLifetimeConversion = false;
+      
+      // If we are initializing an rvalue reference, don't permit conversion
+      // functions that return lvalues.
+      if (!ConvTemplate && DeclType->isRValueReferenceType()) {
+        const ReferenceType *RefType
+          = Conv->getConversionType()->getAs<LValueReferenceType>();
+        if (RefType && !RefType->getPointeeType()->isFunctionType())
+          continue;
+      }
+      
       if (!ConvTemplate &&
           S.CompareReferenceRelationship(
             DeclLoc,
@@ -3355,6 +3372,8 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
                                DeclType, CandidateSet);
   }
 
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(S, DeclLoc, Best, true)) {
   case OR_Success:
@@ -3376,6 +3395,7 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
     ICS.setUserDefined();
     ICS.UserDefined.Before = Best->Conversions[0].Standard;
     ICS.UserDefined.After = Best->FinalConversion;
+    ICS.UserDefined.HadMultipleCandidates = HadMultipleCandidates;
     ICS.UserDefined.ConversionFunction = Best->Function;
     ICS.UserDefined.FoundConversionFunction = Best->FoundDecl;
     ICS.UserDefined.EllipsisConversion = false;
@@ -3644,6 +3664,19 @@ TryReferenceInit(Sema &S, Expr *&Init, QualType DeclType,
     ICS.Standard.BindsImplicitObjectArgumentWithoutRefQualifier = false;
     ICS.Standard.ObjCLifetimeConversionBinding = false;
   } else if (ICS.isUserDefined()) {
+    // Don't allow rvalue references to bind to lvalues.
+    if (DeclType->isRValueReferenceType()) {
+      if (const ReferenceType *RefType
+            = ICS.UserDefined.ConversionFunction->getResultType()
+                ->getAs<LValueReferenceType>()) {
+        if (!RefType->getPointeeType()->isFunctionType()) {
+          ICS.setBad(BadConversionSequence::lvalue_ref_to_rvalue, Init, 
+                     DeclType);
+          return ICS;
+        }
+      }
+    }
+    
     ICS.UserDefined.After.ReferenceBinding = true;
     ICS.UserDefined.After.IsLvalueReference = !isRValRef;
     ICS.UserDefined.After.BindsToFunctionLvalue = T2->isFunctionType();
@@ -4028,6 +4061,8 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
   const UnresolvedSetImpl *Conversions
     = cast<CXXRecordDecl>(RecordTy->getDecl())->getVisibleConversionFunctions();
 
+  bool HadMultipleCandidates = (Conversions->size() > 1);
+
   for (UnresolvedSetImpl::iterator I = Conversions->begin(),
                                    E = Conversions->end();
        I != E;
@@ -4072,7 +4107,8 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
         return ExprError();
 
       CheckMemberOperatorAccess(From->getExprLoc(), From, 0, Found);
-      ExprResult Result = BuildCXXMemberCallExpr(From, Found, Conversion);
+      ExprResult Result = BuildCXXMemberCallExpr(From, Found, Conversion,
+                                                 HadMultipleCandidates);
       if (Result.isInvalid())
         return ExprError();
 
@@ -4099,8 +4135,8 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
         << T << ConvTy->isEnumeralType() << ConvTy << From->getSourceRange();
     }
 
-    ExprResult Result = BuildCXXMemberCallExpr(From, Found,
-                          cast<CXXConversionDecl>(Found->getUnderlyingDecl()));
+    ExprResult Result = BuildCXXMemberCallExpr(From, Found, Conversion,
+                                               HadMultipleCandidates);
     if (Result.isInvalid())
       return ExprError();
 
@@ -4772,6 +4808,7 @@ void Sema::AddSurrogateCandidate(CXXConversionDecl *Conversion,
   Candidate.Conversions[0].setUserDefined();
   Candidate.Conversions[0].UserDefined.Before = ObjectInit.Standard;
   Candidate.Conversions[0].UserDefined.EllipsisConversion = false;
+  Candidate.Conversions[0].UserDefined.HadMultipleCandidates = false;
   Candidate.Conversions[0].UserDefined.ConversionFunction = Conversion;
   Candidate.Conversions[0].UserDefined.FoundConversionFunction = FoundDecl;
   Candidate.Conversions[0].UserDefined.After
@@ -8599,6 +8636,8 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
   // Add builtin operator candidates.
   AddBuiltinOperatorCandidates(Op, OpLoc, &Args[0], NumArgs, CandidateSet);
 
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
   // Perform overload resolution.
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(*this, OpLoc, Best)) {
@@ -8643,7 +8682,8 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
       ResultTy = ResultTy.getNonLValueExprType(Context);
 
       // Build the actual expression node.
-      ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl);
+      ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl,
+                                                HadMultipleCandidates);
       if (FnExpr.isInvalid())
         return ExprError();
 
@@ -8847,6 +8887,8 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
   // Add builtin operator candidates.
   AddBuiltinOperatorCandidates(Op, OpLoc, Args, 2, CandidateSet);
 
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
   // Perform overload resolution.
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(*this, OpLoc, Best)) {
@@ -8908,7 +8950,8 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
         ResultTy = ResultTy.getNonLValueExprType(Context);
 
         // Build the actual expression node.
-        ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl, OpLoc);
+        ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl,
+                                                  HadMultipleCandidates, OpLoc);
         if (FnExpr.isInvalid())
           return ExprError();
 
@@ -9058,6 +9101,8 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
   // Add builtin operator candidates.
   AddBuiltinOperatorCandidates(OO_Subscript, LLoc, Args, 2, CandidateSet);
 
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
   // Perform overload resolution.
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(*this, LLoc, Best)) {
@@ -9104,7 +9149,9 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
         DeclarationNameLoc LocInfo;
         LocInfo.CXXOperatorName.BeginOpNameLoc = LLoc.getRawEncoding();
         LocInfo.CXXOperatorName.EndOpNameLoc = RLoc.getRawEncoding();
-        ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl, LLoc, LocInfo);
+        ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl,
+                                                  HadMultipleCandidates,
+                                                  LLoc, LocInfo);
         if (FnExpr.isInvalid())
           return ExprError();
 
@@ -9498,6 +9545,8 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
     }
   }
 
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
   // Perform overload resolution.
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(*this, Object.get()->getLocStart(),
@@ -9556,7 +9605,8 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
 
     // Create an implicit member expr to refer to the conversion operator.
     // and then call it.
-    ExprResult Call = BuildCXXMemberCallExpr(Object.get(), Best->FoundDecl, Conv);
+    ExprResult Call = BuildCXXMemberCallExpr(Object.get(), Best->FoundDecl,
+                                             Conv, HadMultipleCandidates);
     if (Call.isInvalid())
       return ExprError();
 
@@ -9592,7 +9642,8 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
   for (unsigned ArgIdx = 0; ArgIdx < NumArgs; ++ArgIdx)
     MethodArgs[ArgIdx + 1] = Args[ArgIdx];
 
-  ExprResult NewFn = CreateFunctionRefExpr(*this, Method);
+  ExprResult NewFn = CreateFunctionRefExpr(*this, Method,
+                                           HadMultipleCandidates);
   if (NewFn.isInvalid())
     return true;
 
@@ -9722,6 +9773,8 @@ Sema::BuildOverloadedArrowExpr(Scope *S, Expr *Base, SourceLocation OpLoc) {
                        0, 0, CandidateSet, /*SuppressUserConversions=*/false);
   }
 
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
   // Perform overload resolution.
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(*this, OpLoc, Best)) {
@@ -9769,7 +9822,8 @@ Sema::BuildOverloadedArrowExpr(Scope *S, Expr *Base, SourceLocation OpLoc) {
   Base = BaseResult.take();
 
   // Build the operator call.
-  ExprResult FnExpr = CreateFunctionRefExpr(*this, Method);
+  ExprResult FnExpr = CreateFunctionRefExpr(*this, Method,
+                                            HadMultipleCandidates);
   if (FnExpr.isInvalid())
     return ExprError();
 
@@ -9872,14 +9926,16 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
       TemplateArgs = &TemplateArgsBuffer;
     }
 
-    return DeclRefExpr::Create(Context,
-                               ULE->getQualifierLoc(),
-                               Fn,
-                               ULE->getNameLoc(),
-                               Fn->getType(),
-                               VK_LValue,
-                               Found.getDecl(),
-                               TemplateArgs);
+    DeclRefExpr *DRE = DeclRefExpr::Create(Context,
+                                           ULE->getQualifierLoc(),
+                                           Fn,
+                                           ULE->getNameLoc(),
+                                           Fn->getType(),
+                                           VK_LValue,
+                                           Found.getDecl(),
+                                           TemplateArgs);
+    DRE->setHadMultipleCandidates(ULE->getNumDecls() > 1);
+    return DRE;
   }
 
   if (UnresolvedMemberExpr *MemExpr = dyn_cast<UnresolvedMemberExpr>(E)) {
@@ -9896,14 +9952,16 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
     // implicit member access, rewrite to a simple decl ref.
     if (MemExpr->isImplicitAccess()) {
       if (cast<CXXMethodDecl>(Fn)->isStatic()) {
-        return DeclRefExpr::Create(Context,
-                                   MemExpr->getQualifierLoc(),
-                                   Fn,
-                                   MemExpr->getMemberLoc(),
-                                   Fn->getType(),
-                                   VK_LValue,
-                                   Found.getDecl(),
-                                   TemplateArgs);
+        DeclRefExpr *DRE = DeclRefExpr::Create(Context,
+                                               MemExpr->getQualifierLoc(),
+                                               Fn,
+                                               MemExpr->getMemberLoc(),
+                                               Fn->getType(),
+                                               VK_LValue,
+                                               Found.getDecl(),
+                                               TemplateArgs);
+        DRE->setHadMultipleCandidates(MemExpr->getNumDecls() > 1);
+        return DRE;
       } else {
         SourceLocation Loc = MemExpr->getMemberLoc();
         if (MemExpr->getQualifier())
@@ -9925,14 +9983,16 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
       type = Context.BoundMemberTy;
     }
 
-    return MemberExpr::Create(Context, Base,
-                              MemExpr->isArrow(),
-                              MemExpr->getQualifierLoc(),
-                              Fn,
-                              Found,
-                              MemExpr->getMemberNameInfo(),
-                              TemplateArgs,
-                              type, valueKind, OK_Ordinary);
+    MemberExpr *ME = MemberExpr::Create(Context, Base,
+                                        MemExpr->isArrow(),
+                                        MemExpr->getQualifierLoc(),
+                                        Fn,
+                                        Found,
+                                        MemExpr->getMemberNameInfo(),
+                                        TemplateArgs,
+                                        type, valueKind, OK_Ordinary);
+    ME->setHadMultipleCandidates(true);
+    return ME;
   }
 
   llvm_unreachable("Invalid reference to overloaded function");

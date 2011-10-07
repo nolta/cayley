@@ -143,7 +143,7 @@ void Decl::printGroup(Decl** Begin, unsigned NumDecls,
     ++Begin;
 
   PrintingPolicy SubPolicy(Policy);
-  if (TD && TD->isDefinition()) {
+  if (TD && TD->isCompleteDefinition()) {
     TD->print(Out, Policy, Indentation);
     Out << " ";
     SubPolicy.SuppressTag = true;
@@ -347,7 +347,7 @@ void DeclPrinter::VisitEnumDecl(EnumDecl *D) {
     Out << " : " << Underlying;
   }
 
-  if (D->isDefinition()) {
+  if (D->isCompleteDefinition()) {
     Out << " {\n";
     VisitDeclContext(D);
     Indent() << "}";
@@ -361,7 +361,7 @@ void DeclPrinter::VisitRecordDecl(RecordDecl *D) {
   if (D->getIdentifier())
     Out << ' ' << D;
 
-  if (D->isDefinition()) {
+  if (D->isCompleteDefinition()) {
     Out << " {\n";
     VisitDeclContext(D);
     Indent() << "}";
@@ -672,7 +672,7 @@ void DeclPrinter::VisitCXXRecordDecl(CXXRecordDecl *D) {
   if (D->getIdentifier())
     Out << ' ' << D;
 
-  if (D->isDefinition()) {
+  if (D->isCompleteDefinition()) {
     // Print the base classes
     if (D->getNumBases()) {
       Out << " : ";

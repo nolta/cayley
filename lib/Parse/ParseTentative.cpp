@@ -724,6 +724,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw___unaligned:
   case tok::kw___vector:
   case tok::kw___pixel:
+  case tok::kw__Atomic:
     return TPResult::False();
 
   default:
@@ -1037,6 +1038,10 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
 
   // C++0x type traits support
   case tok::kw___underlying_type:
+    return TPResult::True();
+
+  // C1x _Atomic
+  case tok::kw__Atomic:
     return TPResult::True();
 
   default:

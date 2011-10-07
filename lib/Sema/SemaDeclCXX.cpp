@@ -3419,6 +3419,7 @@ struct CheckAbstractUsage {
   CheckPolymorphic(ReferenceTypeLoc)
   CheckPolymorphic(MemberPointerTypeLoc)
   CheckPolymorphic(BlockPointerTypeLoc)
+  CheckPolymorphic(AtomicTypeLoc)
 
   /// Handle all the types we haven't given a more specific
   /// implementation for above.
@@ -8874,6 +8875,7 @@ ExprResult
 Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
                             CXXConstructorDecl *Constructor,
                             MultiExprArg ExprArgs,
+                            bool HadMultipleCandidates,
                             bool RequiresZeroInit,
                             unsigned ConstructKind,
                             SourceRange ParenRange) {
@@ -8896,8 +8898,8 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
   }
 
   return BuildCXXConstructExpr(ConstructLoc, DeclInitType, Constructor,
-                               Elidable, move(ExprArgs), RequiresZeroInit,
-                               ConstructKind, ParenRange);
+                               Elidable, move(ExprArgs), HadMultipleCandidates,
+                               RequiresZeroInit, ConstructKind, ParenRange);
 }
 
 /// BuildCXXConstructExpr - Creates a complete call to a constructor,
@@ -8906,6 +8908,7 @@ ExprResult
 Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
                             CXXConstructorDecl *Constructor, bool Elidable,
                             MultiExprArg ExprArgs,
+                            bool HadMultipleCandidates,
                             bool RequiresZeroInit,
                             unsigned ConstructKind,
                             SourceRange ParenRange) {
@@ -8921,20 +8924,21 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
 
   MarkDeclarationReferenced(ConstructLoc, Constructor);
   return Owned(CXXConstructExpr::Create(Context, DeclInitType, ConstructLoc,
-                                        Constructor, Elidable, Exprs, NumExprs, 
-                                        RequiresZeroInit,
+                                        Constructor, Elidable, Exprs, NumExprs,
+                                        HadMultipleCandidates, RequiresZeroInit,
               static_cast<CXXConstructExpr::ConstructionKind>(ConstructKind),
                                         ParenRange));
 }
 
 bool Sema::InitializeVarWithConstructor(VarDecl *VD,
                                         CXXConstructorDecl *Constructor,
-                                        MultiExprArg Exprs) {
+                                        MultiExprArg Exprs,
+                                        bool HadMultipleCandidates) {
   // FIXME: Provide the correct paren SourceRange when available.
   ExprResult TempResult =
     BuildCXXConstructExpr(VD->getLocation(), VD->getType(), Constructor,
-                          move(Exprs), false, CXXConstructExpr::CK_Complete,
-                          SourceRange());
+                          move(Exprs), HadMultipleCandidates, false,
+                          CXXConstructExpr::CK_Complete, SourceRange());
   if (TempResult.isInvalid())
     return true;
 

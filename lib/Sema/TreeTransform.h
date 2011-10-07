@@ -912,6 +912,12 @@ public:
                                         NumExpansions);
   }
 
+  /// \brief Build a new atomic type given its value type.
+  ///
+  /// By default, performs semantic analysis when building the atomic type.
+  /// Subclasses may override this routine to provide different behavior.
+  QualType RebuildAtomicType(QualType ValueType, SourceLocation KWLoc);
+
   /// \brief Build a new template name given a nested name specifier, a flag
   /// indicating whether the "template" keyword was provided, and the template
   /// that the template name refers to.
@@ -2063,13 +2069,14 @@ public:
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildCXXConstructExpr(QualType T,
-                                           SourceLocation Loc,
-                                           CXXConstructorDecl *Constructor,
-                                           bool IsElidable,
-                                           MultiExprArg Args,
-                                           bool RequiresZeroInit,
+                                     SourceLocation Loc,
+                                     CXXConstructorDecl *Constructor,
+                                     bool IsElidable,
+                                     MultiExprArg Args,
+                                     bool HadMultipleCandidates,
+                                     bool RequiresZeroInit,
                              CXXConstructExpr::ConstructionKind ConstructKind,
-                                           SourceRange ParenRange) {
+                                     SourceRange ParenRange) {
     ASTOwningVector<Expr*> ConvertedArgs(SemaRef);
     if (getSema().CompleteConstructorCall(Constructor, move(Args), Loc, 
                                           ConvertedArgs))
@@ -2077,6 +2084,7 @@ public:
     
     return getSema().BuildCXXConstructExpr(Loc, T, Constructor, IsElidable,
                                            move_arg(ConvertedArgs),
+                                           HadMultipleCandidates,
                                            RequiresZeroInit, ConstructKind,
                                            ParenRange);
   }
@@ -4452,6 +4460,29 @@ QualType TreeTransform<Derived>::TransformTemplateSpecializationType(
     return QualType();
 
   return getDerived().TransformTemplateSpecializationType(TLB, TL, Template);
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformAtomicType(TypeLocBuilder &TLB,
+                                                     AtomicTypeLoc TL) {
+  QualType ValueType = getDerived().TransformType(TLB, TL.getValueLoc());
+  if (ValueType.isNull())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() ||
+      ValueType != TL.getValueLoc().getType()) {
+    Result = getDerived().RebuildAtomicType(ValueType, TL.getKWLoc());
+    if (Result.isNull())
+      return QualType();
+  }
+
+  AtomicTypeLoc NewTL = TLB.push<AtomicTypeLoc>(Result);
+  NewTL.setKWLoc(TL.getKWLoc());
+  NewTL.setLParenLoc(TL.getLParenLoc());
+  NewTL.setRParenLoc(TL.getRParenLoc());
+
+  return Result;
 }
 
 namespace {
@@ -7452,6 +7483,7 @@ TreeTransform<Derived>::TransformCXXConstructExpr(CXXConstructExpr *E) {
   return getDerived().RebuildCXXConstructExpr(T, /*FIXME:*/E->getLocStart(),
                                               Constructor, E->isElidable(),
                                               move_arg(Args),
+                                              E->hadMultipleCandidates(),
                                               E->requiresZeroInitialization(),
                                               E->getConstructionKind(),
                                               E->getParenRange());
@@ -8386,6 +8418,12 @@ QualType TreeTransform<Derived>::RebuildTemplateSpecializationType(
                                              SourceLocation TemplateNameLoc,
                                      TemplateArgumentListInfo &TemplateArgs) {
   return SemaRef.CheckTemplateIdType(Template, TemplateNameLoc, TemplateArgs);
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::RebuildAtomicType(QualType ValueType,
+                                                   SourceLocation KWLoc) {
+  return SemaRef.BuildAtomicType(ValueType, KWLoc);
 }
 
 template<typename Derived>

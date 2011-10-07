@@ -818,6 +818,10 @@ DEF_TRAVERSE_TYPE(ObjCObjectPointerType, {
     TRY_TO(TraverseType(T->getPointeeType()));
   })
 
+DEF_TRAVERSE_TYPE(AtomicType, {
+    TRY_TO(TraverseType(T->getValueType()));
+  })
+
 #undef DEF_TRAVERSE_TYPE
 
 // ----------------- TypeLoc traversal -----------------
@@ -1048,6 +1052,10 @@ DEF_TRAVERSE_TYPELOC(ObjCObjectType, {
 
 DEF_TRAVERSE_TYPELOC(ObjCObjectPointerType, {
     TRY_TO(TraverseTypeLoc(TL.getPointeeLoc()));
+  })
+
+DEF_TRAVERSE_TYPELOC(AtomicType, {
+    TRY_TO(TraverseTypeLoc(TL.getValueLoc()));
   })
 
 #undef DEF_TRAVERSE_TYPELOC

@@ -648,8 +648,10 @@ namespace clang {
       TYPE_AUTO                  = 38,
       /// \brief A UnaryTransformType record.
       TYPE_UNARY_TRANSFORM       = 39,
+      /// \brief An AtomicType record.
+      TYPE_ATOMIC                = 40,
       /// \brief A SliceType record.
-      TYPE_SLICE                    = 40
+      TYPE_SLICE                 = 41
     };
 
     /// \brief The type IDs for special types constructed by semantic
